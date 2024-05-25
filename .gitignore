@@ -1,0 +1,5 @@
+node_modules/*
+
+*.mp3
+*.flac
+*.wav
