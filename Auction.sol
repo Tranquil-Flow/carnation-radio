@@ -16,6 +16,7 @@ contract Auction is ReentrancyGuard {
     struct AudioSlot {
         uint auctionStartTime;
         bool auctionFinished;
+        string audioName;
     }
 
     struct Bid {
@@ -78,7 +79,7 @@ contract Auction is ReentrancyGuard {
         if (!success) {revert ETHTransferOutFailed();}
     }
 
-    function startAuction(uint _audioSlotID) public {
+    function startAuction(uint _audioSlotID, string calldata _audioName) public {
         AudioSlot storage slot = audioSlots[_audioSlotID];
         
         // Check if the auction has already started
@@ -86,6 +87,9 @@ contract Auction is ReentrancyGuard {
 
         // Set the auction start time
         slot.auctionStartTime = block.timestamp;
+
+        // Set the audio name
+        slot.audioName = _audioName;
     }
 
     function endAuction(uint _audioSlotID) public {
@@ -110,14 +114,15 @@ contract Auction is ReentrancyGuard {
             }
         }
 
+        uint swarmHostingCost;
+        string memory swarmLink;        
+        // Implement Swarm hosting logic here 
+
         // Check a bid occured
         if (highestBidder != address(0)) {
             // If so, mint NFT to the highest bidder
-            audioSetNFT.mint(highestBidder);
+            audioSetNFT.mint(highestBidder, swarmLink);
         }
-
-        uint swarmHostingCost;        
-        // Implement Swarm hosting logic here 
 
         // End the auction
         slot.auctionFinished = true;
