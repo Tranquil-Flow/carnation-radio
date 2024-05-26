@@ -78,11 +78,10 @@ contract Auction is ReentrancyGuard {
         if (block.timestamp < slot.auctionStartTime + auctionLength) {revert AuctionNotEnded();}
         
         // Remove bid from bid list for the audio slot (set to 0)
-        uint _bidAmount = existingBid.bidAmount;
+        uint returnAmount = existingBid.bidAmount;
         existingBid.bidAmount = 0; 
         
         // Transfer the bid amount back to the bidder
-        uint returnAmount = _bidAmount;
         (bool success, ) = msg.sender.call{value: returnAmount}("");
         if (!success) {revert ETHTransferOutFailed();}
 
@@ -162,6 +161,9 @@ contract Auction is ReentrancyGuard {
 
         // End the auction
         slot.auctionFinished = true;
+
+        // Set the winnning bid to 0
+        bids[_audioSlotID][highestBidder].bidAmount = 0;
 
         emit AuctionEnded(_audioSlotID, highestBidder, highestBid, swarmLink);
     }
