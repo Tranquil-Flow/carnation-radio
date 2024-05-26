@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./AudioSetNFT.sol";
 
 // TODO: Add events
+// TODO: Check if address has already placed bid when calling placeBid()
 
 contract Auction is ReentrancyGuard {
 
@@ -12,19 +13,26 @@ contract Auction is ReentrancyGuard {
 
     AudioSetNFT public audioSetNFT;
 
+    struct AudioSlot {
+        uint auctionStartTime;
+        bool auctionFinished;
+    }
+
+    struct Bid {
+        address bidder;
+        uint bidAmount;
+    }
+
+
+    mapping(uint => AudioSlot) public audioSlots;
+    mapping(uint => mapping(address => Bid)) public bids;
+
     error ETHTransferInFailed();
     error ETHTransferOutFailed();
     error AuctionAlreadyStarted();
     error AuctionNotEnded();
     error AuctionAlreadyEnded();
-
-    struct AudioSlot {
-        uint audioSlotID;
-        uint auctionStartTime;
-        bool auctionFinished;
-    }
-
-    AudioSlot[] public audioSlots;
+    error BidAmountZero();
 
     constructor(
         uint _auctionLength,
@@ -33,26 +41,37 @@ contract Auction is ReentrancyGuard {
         // Define state variables
         auctionLength = _auctionLength;
         audioSetNFT = AudioSetNFT(_nftAddress);
-
-
     }
 
     function placeBid(uint _audioSlotID) public payable nonReentrant {
-        // Add bid to bid list for the audio slot
+        AudioSlot storage slot = audioSlots[_audioSlotID];
+
+        // Check if the auction has started
+        if (block.timestamp < slot.auctionStartTime) {revert AuctionNotStarted();}
+
+        // Check if the auction has ended
+        if (block.timestamp > slot.auctionStartTime + auctionLength) {revert AuctionAlreadyEnded();}
+
+        // Check bid amount is greater than zero
+        if (msg.value == 0) {revert BidAmountZero();}
 
         // Transfer the bid amount to the contract
         (bool success, ) = recipient.call{value: msg.value}("");
         if (!success) {revert(ETHTransferInFailed());}
 
-        // Return the previous bidder's funds if they are not the streamer
-        if (musicSlots[_audioSlotID].bidder != streamer) {
-            (bool success, ) = musicSlots[_audioSlotID].bidder.call{value: musicSlots[_audioSlotID].highestBidAmount}("");
-            if (!success) {revert(ETHTransferOutFailed());}
-        }
+        // Add bid to bid list for the audio slot
+        bids[_audioSlotID][msg.sender] = Bid(msg.sender, msg.value);
     }
 
     function removeBid(uint _audioSlotID) public nonReentrant {
-        // Add bid to bid list for the audio slot
+        AudioSlot storage slot = audioSlots[_audioSlotID];
+        Bid storage existingBid = bids[_audioSlotID][msg.sender];
+
+        // Check if the auction has started
+        if (block.timestamp < slot.auctionStartTime) {revert AuctionNotStarted();}
+        
+        // Remove bid from bid list for the audio slot (set to 0)
+        existingBid.bidAmount = 0;
 
         // Transfer the bid amount back to the bidder
         (bool success, ) = msg.sender.call{value: musicSlots[highestBidder].highestBidAmount}("");
@@ -60,32 +79,48 @@ contract Auction is ReentrancyGuard {
     }
 
     function startAuction(uint _audioSlotID) public {
+        AudioSlot storage slot = audioSlots[_audioSlotID];
+        
         // Check if the auction has already started
-        if (block.timestamp > audioSlots[_audioSlotID].auctionStartTime + auctionLength) {revert AuctionAlreadyStarted();}
+        if (slot.auctionStartTime != 0) {revert AuctionAlreadyStarted();}
 
         // Set the auction start time
-        audioSlots[_audioSlotID].auctionStartTime = block.timestamp;
+        slot.auctionStartTime = block.timestamp;
     }
 
     function endAuction(uint _audioSlotID) public {
+        AudioSlot storage slot = audioSlots[_audioSlotID];
+
         // Check if the auction has ended
-        if (block.timestamp < audioSlots[_audioSlotID].auctionStartTime + auctionLength) {revert AuctionNotEnded();}
+        if (block.timestamp < slot.auctionStartTime + auctionLength) {revert AuctionNotEnded();}
 
         // Check if endAuction has already been called
         if (audioSlots[_audioSlotID].auctionFinished) {revert AuctionAlreadyEnded();}
 
         // Get highest bidder
         address highestBidder;
+        uint highestBid;
 
-        // Mint the NFT to the highest bidder
-        audioSetNFT.mint(highestBidder);
+        for (uint i = 0; i < slot.bidders.length; i++) {
+            address bidder = slot.bidders[i];
+            uint bidAmount = bids[_audioSlotID][bidder].amount;
+            if (bidAmount > highestBid) {
+                highestBid = bidAmount;
+                highestBidder = bidder;
+            }
+        }
 
-        uint swarmHostingCost;
-        
+        // Check a bid occured
+        if (highestBidder != address(0)) {
+            // If so, mint NFT to the highest bidder
+            audioSetNFT.mint(highestBidder);
+        }
+
+        uint swarmHostingCost;        
         // Implement Swarm hosting logic here 
 
         // End the auction
-        audioSlots[_audioSlotID].auctionFinished = true;
+        slot.auctionFinished = true;
     }
 
 }
