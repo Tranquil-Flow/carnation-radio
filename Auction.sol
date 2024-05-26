@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./AudioSetNFT.sol";
 
 // TODO: Add events
-// TODO: Check if address has already placed bid when calling placeBid()
+// TODO: Voting system verified by zupass
 
 contract Auction is ReentrancyGuard {
 
@@ -23,7 +23,6 @@ contract Auction is ReentrancyGuard {
         address bidder;
         uint bidAmount;
     }
-
 
     mapping(uint => AudioSlot) public audioSlots;
     mapping(uint => mapping(address => Bid)) public bids;
@@ -53,10 +52,8 @@ contract Auction is ReentrancyGuard {
     function placeBid(uint _audioSlotID) external payable nonReentrant {
         AudioSlot storage slot = audioSlots[_audioSlotID];
 
-        // Check if the auction has started
+        // Check if the auction is ongoing
         if (block.timestamp < slot.auctionStartTime) {revert AuctionNotStarted();}
-
-        // Check if the auction has ended
         if (block.timestamp > slot.auctionStartTime + auctionLength) {revert AuctionAlreadyEnded();}
 
         // Check bid amount is greater than zero
@@ -76,17 +73,37 @@ contract Auction is ReentrancyGuard {
         AudioSlot storage slot = audioSlots[_audioSlotID];
         Bid storage existingBid = bids[_audioSlotID][msg.sender];
 
-        // Check if the auction has started
-        if (block.timestamp < slot.auctionStartTime) {revert AuctionNotStarted();}
+        // Check the auction has ended
+        if (block.timestamp < slot.auctionStartTime + auctionLength) {revert AuctionNotEnded();}
         
-        // Remove bid from bid list for the audio slot (set to 0)
-        existingBid.bidAmount = 0;
-
         // Transfer the bid amount back to the bidder
         (bool success, ) = msg.sender.call{value: musicSlots[highestBidder].highestBidAmount}("");
         if (!success) {revert ETHTransferOutFailed();}
 
         emit BidRemoved(_audioSlotID, msg.sender);
+    }
+
+    function editBid(uint _audioSlotID) external payable nonReentrant {
+        AudioSlot storage slot = audioSlots[_audioSlotID];
+        Bid storage existingBid = bids[_audioSlotID][msg.sender];
+
+        // Check the auction is ongoing
+        if (block.timestamp < slot.auctionStartTime) {revert AuctionNotStarted();}
+        if (block.timestamp > slot.auctionStartTime + auctionLength) {revert AuctionAlreadyEnded();}
+
+        // Check bid amount is greater than zero
+        if (msg.value == 0) {revert BidAmountZero();}
+
+        // Transfer the bid amount to the contract
+        (bool success, ) = recipient.call{value: msg.value}("");
+        if (!success) {revert ETHTransferInFailed();}
+
+        // Update the bid amount
+        uint newBidAmount = existingBid.bidAmount + msg.value;
+        existingBid.bidAmount = newBidAmount;
+
+        emit BidRemoved(audioSlotID, bidder);
+        emit BidPlaced(_audioSlotID, msg.sender, newBidAmount);
     }
 
     function startAuction(uint _audioSlotID, string calldata _audioName) external {
