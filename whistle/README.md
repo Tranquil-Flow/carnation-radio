@@ -44,19 +44,21 @@ The augmented message consists of:
 - and finally the actual message
 
 To be able even detect that there is a message hidden in a given `.wav` file,
-the adversary needs to know the 128 bit starting pattern; then to actually
+the adversary needs to know the 128 bit handshake pattern; then to actually
 decode it, they also need the another 128 bit of blinding key, which unblinds 
-the actual AES decoding key. Even the metadata is encrypted.
+the actual AES decoding key. These two keys are concatenated into a single
+decrypting key.
 
-Since all the low bits are statistically totally random (in fact, after the 
-encoding, they are forcibly randomized), this is all plausible deniable.
+Since all the low bits in the resulting file are statistically totally random 
+(in fact, after the encoding, they are forcibly randomized), this is all 
+plausibly deniable.
 
 
 third-party library credits
 ---------------------------
 
-- AES code is by kokke, and is public domain: https://github.com/kokke/tiny-AES-c
-- SHA256 code is by Brad Conte and is under "unlicense": https://github.com/B-Con
+- AES code is by "kokke", and is public domain ("unlicense"): https://github.com/kokke/tiny-AES-c
+- SHA256 code is by Brad Conte and also public domain: https://github.com/B-Con/crypto-algorithms
 
 
 TODO

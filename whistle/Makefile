@@ -5,10 +5,8 @@ EXE := whistle
 
 all: $(EXE)
 
-whistle: $(EXE)
-
 GCC := gcc
-CFLAGS = -Wnone -O
+CFLAGS = -O -w
 
 .PHONY: clean
 clean:
@@ -17,4 +15,4 @@ clean:
 	rm -f $(EXE).exe
 
 ${EXE}: aes.c rnd.c sha256.c whistle.c aes.h rnd.h sha256.h
-	gcc aes.c rnd.c sha256.c whistle.c -o $(EXE)
+	gcc $(CFLAGS) aes.c rnd.c sha256.c whistle.c -o $(EXE)
