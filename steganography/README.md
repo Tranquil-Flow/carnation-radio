@@ -6,6 +6,13 @@ cd steganography
 yt-dlp https://www.youtube.com/watch?v=6wxiu1n474w
 ## If using .wav : 
 ffmpeg -i Paulo\ de\ Carvalho\ -\ E\ Depois\ do\ Adeus\ \(Letra\)\ \[6wxiu1n474w\].opus -acodec pcm_u8 -ar 41000 Paulo\ de\ Carvalho\ -\ E\ Depois\ do\ Adeus\ \(Letra\)\ \[6wxiu1n474w\].wav
+
+
+## .wav -> .flac 16 bit
+ffmpeg -i Paulo\ de\ Carvalho\ -\ E\ Depois\ do\ Adeus\ \(Letra\)\ \[6wxiu1n474w\].wav -af aformat=s16:44100 Paulo\ de\ Carvalho\ -\ E\ Depois\ do\ Adeus\ \(Letra\)\ \[6wxiu1n474w\].flac
+
+## .wav -> .mp3
+ffmpeg -i Paulo\ de\ Carvalho\ -\ E\ Depois\ do\ Adeus\ \(Letra\)\ \[6wxiu1n474w\].wav -acodec mp3 -ab 64k Paulo\ de\ Carvalho\ -\ E\ Depois\ do\ Adeus\ \(Letra\)\ \[6wxiu1n474w\].mp3
 ```
 
 ## encode
