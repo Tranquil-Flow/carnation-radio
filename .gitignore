@@ -3,5 +3,6 @@ node_modules
 .env
 
 *.mp3
+*.opus
 *.flac
 *.wav
