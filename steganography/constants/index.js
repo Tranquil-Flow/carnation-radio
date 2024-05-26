@@ -12,4 +12,4 @@ const outputSubsonicPercentage = 2;
 const lowpassCutoffFrequency = 50; // Low-pass filter cutoff frequency in Hz
 const signalstring = '010011000100111101001100';
 
-module.exports = { sampleRate, f0, f1, bitDuration, lowpassCutoffFrequency, signalstring };
+module.exports = { sampleRate, f0, f1, bitDuration, outputOriginalPercentage, outputSubsonicPercentage, signalstring };

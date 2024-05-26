@@ -17,12 +17,16 @@ ffmpeg -i Paulo\ de\ Carvalho\ -\ E\ Depois\ do\ Adeus\ \(Letra\)\ \[6wxiu1n474w
 
 ## encode
 ```
-node index.js Paulo\ de\ Carvalho\ -\ E\ Depois\ do\ Adeus\ \(Letra\)\ \[6wxiu1n474w\].wav encoded.wav 
+## .wav
+node encode.js Paulo\ de\ Carvalho\ -\ E\ Depois\ do\ Adeus\ \(Letra\)\ \[6wxiu1n474w\].wav encoded.wav 
+
+## .flac
+node encode.js Paulo\ de\ Carvalho\ -\ E\ Depois\ do\ Adeus\ \(Letra\)\ \[6wxiu1n474w\].wav encoded.flac 
 ```
 
 ## decode
 ```
-node decode.js encoded.wav ---
+node decode.js encoded.<???> ---
 ```
 
 ## change params

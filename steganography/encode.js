@@ -87,15 +87,41 @@ const overlaySignal = (songData, signal) => {
     const combinedSignal = overlaySignal(songData, subsonicSignal);
 
     const encodedWav = {
-    sampleRate: sampleRate,
-    channelData: [Float32Array.from(combinedSignal)]
+      sampleRate: sampleRate,
+      channelData: [Float32Array.from(combinedSignal)]
     };
 
-    const encodedBuffer = await WavEncoder.encode(encodedWav);
-    await fs.writeFile(outputFile, Buffer.from(encodedBuffer));
-    
-    console.log({ outputOriginalPercentage, outputSubsonicPercentage });
-    console.log('Combined song saved as', outputFile);
+    const wavBuffer = await WavEncoder.encode(encodedWav);
+    // .FLAC output? or .WAV?
+    if (outputFile.endsWith('.flac')) {
+      const pcmData = new Int16Array(new DataView(wavBuffer).buffer);
+      const flacEncoder = new flac.StreamEncoder({
+        sampleRate: sampleRate,
+        channels: 1,
+        bitsPerSample: 16
+      });
+
+      flacEncoder.on('error', (err) => {
+        console.error('FLAC encoding error:', err);
+      });
+
+      const flacBuffers = [];
+      flacEncoder.on('data', chunk => flacBuffers.push(chunk));
+
+      flacEncoder.on('end', async () => {
+        await fs.writeFile(outputFile, Buffer.concat(flacBuffers));
+        console.log({ outputOriginalPercentage, outputSubsonicPercentage });
+        console.log('Combined song saved as', outputFile);
+      });
+
+      const buffer = Buffer.from(pcmData.buffer);
+      flacEncoder.write(buffer);
+      flacEncoder.end();
+    } else {
+      await fs.writeFile(outputFile, Buffer.from(wavBuffer));
+      console.log({ outputOriginalPercentage, outputSubsonicPercentage });
+      console.log('Combined song saved as', outputFile);
+    }    
   } catch (err) {
     console.error(err);
   }

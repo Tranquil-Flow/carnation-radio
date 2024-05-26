@@ -3,6 +3,7 @@ const yargs = require('yargs');
 const wav = require('wav-decoder');
 const FFT = require('fft-js').fft;
 const fftUtil = require('fft-js').util;
+const flac = require('flac-bindings');
 const { hideBin } = require('yargs/helpers');
 
 const { sampleRate, f0, f1, bitDuration, lowpassCutoffFrequency, signalstring } = require('./constants');
@@ -103,10 +104,25 @@ const isLowBit = maxFrequency => maxFrequency > f0*0.9 && maxFrequency < f0*1.1;
 // Read the reencoded file
 (async () => {
 try {
+  let songData;
   fs.readFile(songFile)
-    .then(wav.decode)
-    .then((audioData) => {
-      const songData = audioData.channelData[0];
+    .then(async buffer => {
+      if (songFile.endsWith('.flac')) {
+        const flacDecoder = new flac.Decoder();
+        const decoded = await new Promise((resolve, reject) => {
+          flacDecoder.on('data', resolve);
+          flacDecoder.on('error', reject);
+          flacDecoder.end(buffer);
+        });
+
+        songData = new Float32Array(decoded.pcm);
+      } else {
+        // fs.readFile(songFile)
+        //   .then(wav.decode)
+        //   .then((audioData) => {
+    
+        songData = (await wav.decode(buffer)).channelData[0];
+      }
 
       // Apply a low-pass filter to extract the sub-sonic frequencies
       const filteredSignal = songData.map((sample, index) => {
