@@ -15,7 +15,7 @@ Carnation prioritizes anonymity, letting your voice be heard without compromisin
 Imagine the underprivileged individuals and collectives whose message is embedded in the music, broadcasted for all to hear, yet only those who know where to look can decipher it.
 
 **Check out our slides - [here](https://github.com/Tranquil-Flow/carnation-radio/blob/main/SLIDES.md) <br><br>**
-**Check out our demo - [here]() <br><br>**
+**Check out our demo - [here](https://kapture-debelg-debelgs-projects.vercel.app/) <br><br>**
 
 We have created [CLI](https://github.com/Tranquil-Flow/carnation-radio/tree/main/whistle) for encryption of the message into the wav file which is then uploaded onto **ETHSwarm** decentralized data storage. We have deployed our frontend via **Scaffold-ETH2** and deployed our smart contracts for auction of the 24h playlist NFT (funding mechanism for data storage) on ETHSepolia.
 
