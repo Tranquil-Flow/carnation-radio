@@ -24,7 +24,7 @@ contract AudioSetNFT is ERC721 {
         _;
     }
 
-    function mint(address to, string memory tokenURI) public onlyAuction returns (uint256) {
+    function mint(address to, string memory tokenURI) external onlyAuction returns (uint256) {
         _currentTokenId++;
         uint256 newTokenId = _currentTokenId;
         _safeMint(to, newTokenId);

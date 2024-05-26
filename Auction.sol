@@ -45,7 +45,7 @@ contract Auction is ReentrancyGuard {
         audioSetNFT = AudioSetNFT(_nftAddress);
     }
 
-    function placeBid(uint _audioSlotID) public payable nonReentrant {
+    function placeBid(uint _audioSlotID) external payable nonReentrant {
         AudioSlot storage slot = audioSlots[_audioSlotID];
 
         // Check if the auction has started
@@ -65,7 +65,7 @@ contract Auction is ReentrancyGuard {
         bids[_audioSlotID][msg.sender] = Bid(msg.sender, msg.value);
     }
 
-    function removeBid(uint _audioSlotID) public nonReentrant {
+    function removeBid(uint _audioSlotID) external nonReentrant {
         AudioSlot storage slot = audioSlots[_audioSlotID];
         Bid storage existingBid = bids[_audioSlotID][msg.sender];
 
@@ -80,7 +80,7 @@ contract Auction is ReentrancyGuard {
         if (!success) {revert ETHTransferOutFailed();}
     }
 
-    function startAuction(uint _audioSlotID, string calldata _audioName) public {
+    function startAuction(uint _audioSlotID, string calldata _audioName) external {
         AudioSlot storage slot = audioSlots[_audioSlotID];
         
         // Check if the auction has already started
@@ -93,7 +93,7 @@ contract Auction is ReentrancyGuard {
         slot.audioName = _audioName;
     }
 
-    function endAuction(uint _audioSlotID) public {
+    function endAuction(uint _audioSlotID) external {
         AudioSlot storage slot = audioSlots[_audioSlotID];
 
         // Check if the auction has ended
