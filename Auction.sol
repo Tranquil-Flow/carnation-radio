@@ -36,6 +36,11 @@ contract Auction is ReentrancyGuard {
     error AuctionAlreadyEnded();
     error BidAmountZero();
 
+    event AuctionStarted(uint indexed audioSlotID, string audioName, uint auctionStartTime);
+    event BidPlaced(uint indexed audioSlotID, address indexed bidder, uint bidAmount);
+    event BidRemoved(uint indexed audioSlotID, address indexed bidder);
+    event AuctionEnded(uint indexed audioSlotID, address indexed winner, uint winningBid, string swarmLink);
+
     constructor(
         uint _auctionLength,
         address _nftAddress
@@ -63,6 +68,8 @@ contract Auction is ReentrancyGuard {
 
         // Add bid to bid list for the audio slot
         bids[_audioSlotID][msg.sender] = Bid(msg.sender, msg.value);
+
+        emit BidPlaced(_audioSlotID, msg.sender, msg.value);
     }
 
     function removeBid(uint _audioSlotID) external nonReentrant {
@@ -78,6 +85,8 @@ contract Auction is ReentrancyGuard {
         // Transfer the bid amount back to the bidder
         (bool success, ) = msg.sender.call{value: musicSlots[highestBidder].highestBidAmount}("");
         if (!success) {revert ETHTransferOutFailed();}
+
+        emit BidRemoved(_audioSlotID, msg.sender);
     }
 
     function startAuction(uint _audioSlotID, string calldata _audioName) external {
@@ -87,10 +96,13 @@ contract Auction is ReentrancyGuard {
         if (slot.auctionStartTime != 0) {revert AuctionAlreadyStarted();}
 
         // Set the auction start time
-        slot.auctionStartTime = block.timestamp;
+        uint currentTime = block.timestamp;
+        slot.auctionStartTime = currentTime;
 
         // Set the audio name
         slot.audioName = _audioName;
+
+        emit AuctionStarted(_audioSlotID, _audioName, currentTime);
     }
 
     function endAuction(uint _audioSlotID) external {
@@ -127,6 +139,8 @@ contract Auction is ReentrancyGuard {
 
         // End the auction
         slot.auctionFinished = true;
+
+        emit AuctionEnded(_audioSlotID, highestBidder, highestBid, _swarmLink);
     }
 
 }
