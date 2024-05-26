@@ -108,14 +108,27 @@ try {
   fs.readFile(songFile)
     .then(async buffer => {
       if (songFile.endsWith('.flac')) {
-        const flacDecoder = new flac.Decoder();
-        const decoded = await new Promise((resolve, reject) => {
-          flacDecoder.on('data', resolve);
+        const flacDecoder = new flac.StreamDecoder();
+        const pcmData = [];
+  
+
+        await new Promise((resolve, reject) => {
+          flacDecoder.on('data', (chunk) => {
+            if (chunk.buffer) {
+              // Assuming chunk.buffer is a Buffer containing interleaved PCM samples
+              const int16Array = new Int16Array(chunk.buffer.buffer, chunk.buffer.byteOffset, chunk.buffer.byteLength / Int16Array.BYTES_PER_ELEMENT);
+              if (int16Array.length) console.log (int16Array)
+              pcmData.push(...int16Array);
+            }
+          });
+          flacDecoder.on('end', () => resolve(pcmData));
           flacDecoder.on('error', reject);
           flacDecoder.end(buffer);
         });
 
-        songData = new Float32Array(decoded.pcm);
+        console.log(pcmData)
+  
+        songData = new Float32Array(pcmData.map(sample => sample / 32768)); // Normalize to [-1, 1]
       } else {
         // fs.readFile(songFile)
         //   .then(wav.decode)
