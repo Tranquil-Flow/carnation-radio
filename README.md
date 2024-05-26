@@ -20,3 +20,6 @@ Imagine the underprivileged individuals and collectives whose message is embedde
 We have created [CLI](https://github.com/Tranquil-Flow/carnation-radio/tree/main/whistle) for encryption of the message into the wav file which is then uploaded onto **ETHSwarm** decentralized data storage. We have deployed our frontend via **Scaffold-ETH2** and deployed our smart contracts for auction of the 24h playlist NFT (funding mechanism for data storage) on [ETHSepolia]().
 
 ![tech stack (2)](https://github.com/Tranquil-Flow/carnation-radio/assets/101796507/874b9f9b-c39a-48e0-b6eb-5687fec31f51)
+
+Auction.sol on Sepolia - [here](https://sepolia.etherscan.io/address/0x4894421a7c0bc369a5c10ddbaf4dbc7cf3b72ae5#code)
+AudioSetNFT.sol on Sepolia - [here](https://sepolia.etherscan.io/address/0x75993080804d364419445175c5a543eda6a20bb0#code)
