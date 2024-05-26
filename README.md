@@ -19,7 +19,7 @@ Imagine the underprivileged individuals and collectives whose message is embedde
 
 We have created [CLI](https://github.com/Tranquil-Flow/carnation-radio/tree/main/whistle) for encryption of the message into the wav file which is then uploaded onto **ETHSwarm** decentralized data storage. We have deployed our frontend via **Scaffold-ETH2** and deployed our smart contracts for auction of the 24h playlist NFT (funding mechanism for data storage) on ETHSepolia.
 
-Details of the subsonic stegonography scheme and instructions can be explored - [here](https://github.com/Tranquil-Flow/carnation-radio/blob/subsonic-steganography/steganography/README.md)
+Details of the subsonic steganography scheme and instructions can be explored - [here](https://github.com/Tranquil-Flow/carnation-radio/blob/subsonic-steganography/steganography/README.md)
 
 ![tech stack (2)](https://github.com/Tranquil-Flow/carnation-radio/assets/101796507/874b9f9b-c39a-48e0-b6eb-5687fec31f51)
 
