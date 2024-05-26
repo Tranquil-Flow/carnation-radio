@@ -31,6 +31,7 @@ contract Auction is ReentrancyGuard {
     error ETHTransferInFailed();
     error ETHTransferOutFailed();
     error AuctionAlreadyStarted();
+    error AuctionNotStarted();
     error AuctionNotEnded();
     error AuctionAlreadyEnded();
     error BidAmountZero();
