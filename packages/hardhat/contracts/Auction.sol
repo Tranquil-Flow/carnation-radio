@@ -4,9 +4,6 @@ pragma solidity 0.8.20;
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./AudioSetNFT.sol";
 
-// TODO: Add events
-// TODO: Voting system verified by zupass
-
 contract Auction is ReentrancyGuard {
 
     uint public auctionLength;
@@ -17,6 +14,7 @@ contract Auction is ReentrancyGuard {
         uint auctionStartTime;
         bool auctionFinished;
         string audioName;
+        address[] bidders;
     }
 
     struct Bid {
@@ -34,18 +32,20 @@ contract Auction is ReentrancyGuard {
     error AuctionNotEnded();
     error AuctionAlreadyEnded();
     error BidAmountZero();
+    error NFTContractAlreadyDefined();
 
     event AuctionStarted(uint indexed audioSlotID, string audioName, uint auctionStartTime);
     event BidPlaced(uint indexed audioSlotID, address indexed bidder, uint bidAmount);
     event BidRemoved(uint indexed audioSlotID, address indexed bidder);
     event AuctionEnded(uint indexed audioSlotID, address indexed winner, uint winningBid, string swarmLink);
 
-    constructor(
-        uint _auctionLength,
-        address _nftAddress
-    ) public {
+    constructor() {
         // Define state variables
-        auctionLength = _auctionLength;
+        auctionLength = 3600;   // 1 hour
+    }
+
+    function defineNFTcontract(address _nftAddress) external {
+        if (address(audioSetNFT) != address(0)) {revert NFTContractAlreadyDefined();}
         audioSetNFT = AudioSetNFT(_nftAddress);
     }
 
@@ -60,11 +60,12 @@ contract Auction is ReentrancyGuard {
         if (msg.value == 0) {revert BidAmountZero();}
 
         // Transfer the bid amount to the contract
-        (bool success, ) = recipient.call{value: msg.value}("");
-        if (!success) {revert(ETHTransferInFailed());}
+        (bool success, ) = address(this).call{value: msg.value}("");
+        if (!success) {revert ETHTransferInFailed();}
 
         // Add bid to bid list for the audio slot
         bids[_audioSlotID][msg.sender] = Bid(msg.sender, msg.value);
+        slot.bidders.push(msg.sender);
 
         emit BidPlaced(_audioSlotID, msg.sender, msg.value);
     }
@@ -76,8 +77,13 @@ contract Auction is ReentrancyGuard {
         // Check the auction has ended
         if (block.timestamp < slot.auctionStartTime + auctionLength) {revert AuctionNotEnded();}
         
+        // Remove bid from bid list for the audio slot (set to 0)
+        uint _bidAmount = existingBid.bidAmount;
+        existingBid.bidAmount = 0; 
+        
         // Transfer the bid amount back to the bidder
-        (bool success, ) = msg.sender.call{value: musicSlots[highestBidder].highestBidAmount}("");
+        uint returnAmount = _bidAmount;
+        (bool success, ) = msg.sender.call{value: returnAmount}("");
         if (!success) {revert ETHTransferOutFailed();}
 
         emit BidRemoved(_audioSlotID, msg.sender);
@@ -95,14 +101,14 @@ contract Auction is ReentrancyGuard {
         if (msg.value == 0) {revert BidAmountZero();}
 
         // Transfer the bid amount to the contract
-        (bool success, ) = recipient.call{value: msg.value}("");
+        (bool success, ) = address(this).call{value: msg.value}("");
         if (!success) {revert ETHTransferInFailed();}
 
         // Update the bid amount
         uint newBidAmount = existingBid.bidAmount + msg.value;
         existingBid.bidAmount = newBidAmount;
 
-        emit BidRemoved(audioSlotID, bidder);
+        emit BidRemoved(_audioSlotID, msg.sender);
         emit BidPlaced(_audioSlotID, msg.sender, newBidAmount);
     }
 
@@ -137,9 +143,9 @@ contract Auction is ReentrancyGuard {
 
         for (uint i = 0; i < slot.bidders.length; i++) {
             address bidder = slot.bidders[i];
-            uint bidAmount = bids[_audioSlotID][bidder].amount;
-            if (bidAmount > highestBid) {
-                highestBid = bidAmount;
+            uint _bidAmount = bids[_audioSlotID][bidder].bidAmount;
+            if (_bidAmount > highestBid) {
+                highestBid = _bidAmount;
                 highestBidder = bidder;
             }
         }
@@ -157,7 +163,7 @@ contract Auction is ReentrancyGuard {
         // End the auction
         slot.auctionFinished = true;
 
-        emit AuctionEnded(_audioSlotID, highestBidder, highestBid, _swarmLink);
+        emit AuctionEnded(_audioSlotID, highestBidder, highestBid, swarmLink);
     }
 
 }
