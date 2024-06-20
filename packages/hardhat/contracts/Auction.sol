@@ -88,29 +88,6 @@ contract Auction is ReentrancyGuard {
         emit BidRemoved(_audioSlotID, msg.sender);
     }
 
-    function editBid(uint _audioSlotID) external payable nonReentrant {
-        AudioSlot storage slot = audioSlots[_audioSlotID];
-        Bid storage existingBid = bids[_audioSlotID][msg.sender];
-
-        // Check the auction is ongoing
-        if (block.timestamp < slot.auctionStartTime) {revert AuctionNotStarted();}
-        if (block.timestamp > slot.auctionStartTime + auctionLength) {revert AuctionAlreadyEnded();}
-
-        // Check bid amount is greater than zero
-        if (msg.value == 0) {revert BidAmountZero();}
-
-        // Transfer the bid amount to the contract
-        (bool success, ) = address(this).call{value: msg.value}("");
-        if (!success) {revert ETHTransferInFailed();}
-
-        // Update the bid amount
-        uint newBidAmount = existingBid.bidAmount + msg.value;
-        existingBid.bidAmount = newBidAmount;
-
-        emit BidRemoved(_audioSlotID, msg.sender);
-        emit BidPlaced(_audioSlotID, msg.sender, newBidAmount);
-    }
-
     function startAuction(uint _audioSlotID, string calldata _audioName) external {
         AudioSlot storage slot = audioSlots[_audioSlotID];
         

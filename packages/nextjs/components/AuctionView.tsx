@@ -1,11 +1,11 @@
-import React from 'react';
-import '../styles/AuctionView.css';
+import React from "react";
+import "../styles/AuctionView.css";
 
 const AuctionView = () => {
-  const tracks = ['Track 1', 'Track 2', 'Track 3']; // Example tracks
+  const tracks = ["Track 1", "Track 2", "Track 3"]; // Example tracks
   const bids = [
-    { ordinal: 1, username: 'user1', amount: '$100' },
-    { ordinal: 2, username: 'user2', amount: '$90' },
+    { ordinal: 1, username: "user1", amount: "$100" },
+    { ordinal: 2, username: "user2", amount: "$90" },
   ];
 
   return (
