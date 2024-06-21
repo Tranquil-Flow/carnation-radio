@@ -6,8 +6,8 @@ const deployContracts: DeployFunction = async function (hre: HardhatRuntimeEnvir
   const { deploy } = hre.deployments;
   const { ethers } = hre;
 
-  // Deploy the Auction contract
-  const auctionDeployment = await deploy("Auction", {
+  // Deploy the CarnationAuction contract
+  const auctionDeployment = await deploy("CarnationAuction", {
     from: deployer,
     log: true,
     autoMine: true,
@@ -17,29 +17,33 @@ const deployContracts: DeployFunction = async function (hre: HardhatRuntimeEnvir
   if (!auctionContractAddress) {
     throw new Error("Failed to get Auction contract address");
   }
+  console.log(`Auction contract deployed at: ${auctionContractAddress}`);
 
-  // Deploy the AudioSetNFT contract with the Auction contract address as an argument
-  const audioSetNFTDeployment = await deploy("AudioSetNFT", {
+  // Deploy the AudioNFT contract with the Auction contract address as an argument
+  const audioNFTDeployment = await deploy("AudioNFT", {
     from: deployer,
     args: [auctionContractAddress],
     log: true,
     autoMine: true,
   });
 
-  const audioSetNFTContractAddress = audioSetNFTDeployment.address;
+  const audioSetNFTContractAddress = audioNFTDeployment.address;
   if (!audioSetNFTContractAddress) {
     throw new Error("Failed to get AudioSetNFT contract address");
   }
+  console.log(`AudioSetNFT contract deployed at: ${audioSetNFTContractAddress}`);
 
   // Get the Auction contract instance
-  const auctionContract = await ethers.getContractAt("Auction", auctionContractAddress);
+  const auctionContract = await ethers.getContractAt("CarnationAuction", auctionContractAddress);
 
   // Call the defineNFTcontract function on the Auction contract with the address of the deployed AudioSetNFT contract
   const tx = await auctionContract.defineNFTcontract(audioSetNFTContractAddress);
   await tx.wait();
 
-  console.log(`Auction contract deployed at: ${auctionContractAddress}`);
-  console.log(`AudioSetNFT contract deployed at: ${audioSetNFTContractAddress}`);
+  // Call the startAuctionFirst function on CarnationAuction contract
+  const tx2 = await auctionContract.startAuctionFirst();
+  await tx2.wait();
+  console.log("Auctions started successfully");
 };
 
 export default deployContracts;
