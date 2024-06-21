@@ -36,7 +36,7 @@ contract Auction is ReentrancyGuard {
 
     event AuctionStarted(uint indexed audioSlotID, string audioName, uint auctionStartTime);
     event BidPlaced(uint indexed audioSlotID, address indexed bidder, uint bidAmount);
-    event BidRemoved(uint indexed audioSlotID, address indexed bidder);
+    event BidEdited(uint indexed audioSlotID, address indexed bidder, uint newBidAmount);
     event AuctionEnded(uint indexed audioSlotID, address indexed winner, uint winningBid, string swarmLink);
 
     constructor() {
@@ -70,22 +70,26 @@ contract Auction is ReentrancyGuard {
         emit BidPlaced(_audioSlotID, msg.sender, msg.value);
     }
 
-    function removeBid(uint _audioSlotID) external nonReentrant {
+    function editBid(uint _audioSlotID) external payable nonReentrant {
         AudioSlot storage slot = audioSlots[_audioSlotID];
         Bid storage existingBid = bids[_audioSlotID][msg.sender];
 
-        // Check the auction has ended
-        if (block.timestamp < slot.auctionStartTime + auctionLength) {revert AuctionNotEnded();}
-        
-        // Remove bid from bid list for the audio slot (set to 0)
-        uint returnAmount = existingBid.bidAmount;
-        existingBid.bidAmount = 0; 
-        
-        // Transfer the bid amount back to the bidder
-        (bool success, ) = msg.sender.call{value: returnAmount}("");
-        if (!success) {revert ETHTransferOutFailed();}
+        // Check the auction is ongoing
+        if (block.timestamp < slot.auctionStartTime) {revert AuctionNotStarted();}
+        if (block.timestamp > slot.auctionStartTime + auctionLength) {revert AuctionAlreadyEnded();}
 
-        emit BidRemoved(_audioSlotID, msg.sender);
+        // Check bid amount is greater than zero
+        if (msg.value == 0) {revert BidAmountZero();}
+
+        // Transfer the bid amount to the contract
+        (bool success, ) = address(this).call{value: msg.value}("");
+        if (!success) {revert ETHTransferInFailed();}
+
+        // Update the bid amount
+        uint newBidAmount = existingBid.bidAmount + msg.value;
+        existingBid.bidAmount = newBidAmount;
+
+        emit BidEdited(_audioSlotID, msg.sender, newBidAmount);
     }
 
     function startAuction(uint _audioSlotID, string calldata _audioName) external {
