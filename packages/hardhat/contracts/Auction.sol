@@ -7,6 +7,7 @@ import "./AudioSetNFT.sol";
 contract Auction is ReentrancyGuard {
 
     uint public auctionLength;
+    uint public auctionID;
 
     AudioSetNFT public audioSetNFT;
 
@@ -26,17 +27,16 @@ contract Auction is ReentrancyGuard {
     mapping(uint => mapping(address => Bid)) public bids;
 
     error ETHTransferInFailed();
-    error ETHTransferOutFailed();
-    error AuctionAlreadyStarted();
+    error AuctionsAlreadyStarted();
     error AuctionNotStarted();
     error AuctionNotEnded();
     error AuctionAlreadyEnded();
     error BidAmountZero();
     error NFTContractAlreadyDefined();
 
-    event AuctionStarted(uint indexed audioSlotID, string audioName, uint auctionStartTime);
     event BidPlaced(uint indexed audioSlotID, address indexed bidder, uint bidAmount);
     event BidEdited(uint indexed audioSlotID, address indexed bidder, uint newBidAmount);
+    event AuctionStarted(uint indexed audioSlotID, uint auctionStartTime);
     event AuctionEnded(uint indexed audioSlotID, address indexed winner, uint winningBid, string swarmLink);
 
     constructor() {
@@ -92,20 +92,22 @@ contract Auction is ReentrancyGuard {
         emit BidEdited(_audioSlotID, msg.sender, newBidAmount);
     }
 
-    function startAuction(uint _audioSlotID, string calldata _audioName) external {
-        AudioSlot storage slot = audioSlots[_audioSlotID];
-        
-        // Check if the auction has already started
-        if (slot.auctionStartTime != 0) {revert AuctionAlreadyStarted();}
+    function startAuctionFirst() external {
+        if (auctionID == 0) {
+            startAuction();
+        } else {revert AuctionsAlreadyStarted();}
+    }
+
+    function startAuction() internal {
+        // Create auction with new ID
+        uint newAuctionID = auctionID++;
+        AudioSlot storage slot = audioSlots[newAuctionID];
 
         // Set the auction start time
         uint currentTime = block.timestamp;
         slot.auctionStartTime = currentTime;
 
-        // Set the audio name
-        slot.audioName = _audioName;
-
-        emit AuctionStarted(_audioSlotID, _audioName, currentTime);
+        emit AuctionStarted(newAuctionID, currentTime);
     }
 
     function endAuction(uint _audioSlotID) external {
@@ -145,6 +147,9 @@ contract Auction is ReentrancyGuard {
 
         // Set the winnning bid to 0
         bids[_audioSlotID][highestBidder].bidAmount = 0;
+
+        // Start a new auction
+        startAuction();
 
         emit AuctionEnded(_audioSlotID, highestBidder, highestBid, swarmLink);
     }
