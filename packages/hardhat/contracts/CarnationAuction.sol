@@ -132,10 +132,6 @@ contract CarnationAuction is ReentrancyGuard {
             }
         }
 
-        uint swarmHostingCost;
-        string memory swarmLink;        
-        // Implement Swarm hosting logic here 
-
         // Check a bid occured
         if (highestBidder != address(0)) {
             // If so, mint NFT to the highest bidder
@@ -147,6 +143,10 @@ contract CarnationAuction is ReentrancyGuard {
 
         // Set the winnning bid to 0
         bids[_audioSlotID][highestBidder].bidAmount = 0;
+
+        uint swarmHostingCost;
+        string memory swarmLink;        
+        // Implement Swarm hosting logic here 
 
         // Start a new auction
         startAuction();
