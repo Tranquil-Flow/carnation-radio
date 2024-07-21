@@ -2,7 +2,7 @@
 whistle cli
 ===========
 
-This is a steganography tool for musical carrier waves; a quick hack @ ethBerlin4.
+This is a steganography tool for musical carrier waves; it will allow you to encrypt a message within a music file. Hiding it between under the soundwaves.
 
 
 build
@@ -18,8 +18,15 @@ or maybe just:
 use
 ---
 
-    $ whistle encrypt message.dat input.wav output.wav
-    $ whistle decrypt <key> input.wav
+    $ ./whistle encrypt message.dat input.wav output.wav
+    $ ./whistle decrypt <key> input.wav
+
+exampòe
+---
+
+    $ ./whistle encrypt secret.txt YOURAUDIOFILE.wav ENCRYPTEDAUIDOFILE.wav
+    $ ./whistle decrypt <key> DECRYPTEDAUDIOFLE.wav
+
 
 
 what happens under the hood
