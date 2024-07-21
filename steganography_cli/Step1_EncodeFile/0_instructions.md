@@ -25,13 +25,15 @@ only download audio that's within your right to do so.
 ```
 ### format the file to .wav
 ``` 
+THIS DOES NOT WORK ON ARM (M1/M2/M3 Apple Processors),
+
 Here we're applying .wav encodings :
 If you have your own .wav file already, you can skip this part and jump to encode. We will need to install ffmpeg to transform the potential downloaded file to a .wav file. 
 
 
 https://ffmpeg.org/download.html
 https://www.hostinger.com/tutorials/how-to-install-ffmpeg
-THIS DOES NOT WORK ON ARM (M1/M2/M3 Apple Processors), if you have one of these youll need to transform through your own means your file to .wav or download a .wav somewhere else.
+if you have one of these youll need to transform through your own means your file to .wav or download a .wav somewhere else.
 
 you can run this command:
 
@@ -60,7 +62,9 @@ node encode.js [FILENAME.wav] encoded[FILENAME].wav
 node encode.js Paulo\ de\ Carvalho\ -\ E\ Depois\ do\ Adeus\ \(Letra\)\ \[6wxiu1n474w\].wav encoded.wav 
 
 
-if you get an error code, try adding; npm install flac-bindings
+if you get an error code, try adding; 
+npm rebuild flac-bindings 
+npm install flac-bindings
 
 ```
 
