@@ -2,8 +2,11 @@
 pragma solidity 0.8.20;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "./AudioNFT.sol";
+import "./CarnationAudioNFT.sol";
 
+/// @title CarnationAuction
+/// @author Tranquil-Flow
+/// @notice A contract for running auctions on audio sets, hosting the audio on Swarm and minting an NFT to auction winner 
 contract CarnationAuction is ReentrancyGuard {
 
     uint public auctionLength;
@@ -29,12 +32,10 @@ contract CarnationAuction is ReentrancyGuard {
     mapping(uint => mapping(address => Bid)) public bids;
 
     error ETHTransferInFailed();
-    error AuctionsAlreadyStarted();
     error AuctionNotStarted();
     error AuctionNotEnded();
     error AuctionAlreadyEnded();
     error BidAmountZero();
-    error NFTContractAlreadyDefined();
     error BidAlreadyWithdrawn();
 
     event BidPlaced(uint indexed audioSlotID, address indexed bidder, uint bidAmount);
@@ -42,16 +43,20 @@ contract CarnationAuction is ReentrancyGuard {
     event AuctionStarted(uint indexed audioSlotID, uint auctionStartTime);
     event AuctionEnded(uint indexed audioSlotID, address indexed winner, uint winningBid, string swarmLink);
 
-    constructor() {
-        // Define state variables
-        auctionLength = 3600;   // 1 hour
-    }
-
-    function defineNFTcontract(address _nftAddress) external {
-        if (address(audioNFT) != address(0)) {revert NFTContractAlreadyDefined();}
+    /// @notice Initializes key state variables and starts the first auction
+    /// @param _auctionLength The length each auction will run for in seconds (default of 3600 (1 day))
+    /// @param _nftAddress The address of the AudioNFT that will be bid upon and minted after each auction 
+    constructor(
+        uint _auctionLength,
+        address _nftAddress) {
+        auctionLength = _auctionLength;
         audioNFT = AudioNFT(_nftAddress);
+        startAuction();
     }
 
+    /// @notice Places a bid on an auction
+    /// @dev The msg.value is the amount to be bid
+    /// @param _audioSlotID The ID of the auction being bid upon
     function placeBid(uint _audioSlotID) external payable nonReentrant {
         Auction storage currentAuction = auctions[_audioSlotID];
 
@@ -73,6 +78,9 @@ contract CarnationAuction is ReentrancyGuard {
         emit BidPlaced(_audioSlotID, msg.sender, msg.value);
     }
 
+    /// @notice Increases the bid amount of a user's bid on an auction
+    /// @dev Makes an ETH transfer of the msg.value - previous bidAmount
+    /// @param _audioSlotID  The ID of the auction being bid upon
     function editBid(uint _audioSlotID) external payable nonReentrant {
         Auction storage currentAuction = auctions[_audioSlotID];
         Bid storage existingBid = bids[_audioSlotID][msg.sender];
@@ -95,6 +103,9 @@ contract CarnationAuction is ReentrancyGuard {
         emit BidEdited(_audioSlotID, msg.sender, newBidAmount);
     }
 
+    /// @notice Withdraws a bid placed on an auction
+    /// @dev Only callable after the auction has finished
+    /// @param _audioSlotID The ID of the auction that was bid upon
     function withdrawBid(uint _audioSlotID) external nonReentrant {
         Auction storage currentAuction = auctions[_audioSlotID];
         Bid storage existingBid = bids[_audioSlotID][msg.sender];
@@ -113,12 +124,7 @@ contract CarnationAuction is ReentrancyGuard {
         if (!success) {revert ETHTransferInFailed();}
     }
 
-    function startAuctionFirst() external {
-        if (auctionID == 0) {
-            startAuction();
-        } else {revert AuctionsAlreadyStarted();}
-    }
-
+    /// @dev Creates a new auction
     function startAuction() internal {
         // Create auction with new ID
         uint newAuctionID = auctionID++;
@@ -132,6 +138,8 @@ contract CarnationAuction is ReentrancyGuard {
         emit AuctionStarted(newAuctionID, currentTime);
     }
 
+    /// @notice Ends the last auction and begins the next auction
+    /// @param _audioSlotID The ID of the last auction
     function endAuction(uint _audioSlotID) external {
         Auction storage currentAuction = auctions[_audioSlotID];
 

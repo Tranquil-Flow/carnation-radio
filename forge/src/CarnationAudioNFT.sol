@@ -3,7 +3,10 @@ pragma solidity 0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
-contract AudioNFT is ERC721 {
+/// @title CarnationAudioNFT
+/// @author Tranquil-Flow
+/// @notice An NFT that stores music played during the latest CarnationAuction
+contract CarnationAudioNFT is ERC721 {
     // Mapping from token ID to token URI
     mapping(uint256 => string) private _tokenURIs;
     uint256 private _currentTokenId = 0;
@@ -13,7 +16,13 @@ contract AudioNFT is ERC721 {
 
     error OnlyAuctionContract();
 
-    constructor(address _auctionContract) ERC721("CarnationRadio AudioNFT", "CARNATION_AUDIO") {
+    /// @notice Creates the NFT collection
+    constructor() ERC721("CarnationRadio AudioNFT", "CARNATION_AUDIO") {
+    }
+
+    /// @notice Defines the auction contract
+    /// @param _auctionContract The deployed address of CarnationAuction
+    function defineCarnationAuction(address _auctionContract) external {
         auctionContract = _auctionContract;
     }
 
@@ -24,6 +33,8 @@ contract AudioNFT is ERC721 {
         _;
     }
 
+    /// @notice Mints a CarnationAudioNFT
+    /// @dev Can only be called by CarnationAuction, no public mint
     function mint(address to, string memory _tokenURI) external onlyAuction returns (uint256) {
         _currentTokenId++;
         uint256 newTokenId = _currentTokenId;
