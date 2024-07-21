@@ -22,6 +22,7 @@ contract CarnationAuction is ReentrancyGuard {
     struct Bid {
         address bidder;
         uint bidAmount;
+        bool bidWithdrawn;
     }
 
     mapping(uint => Auction) public auctions;
@@ -34,6 +35,7 @@ contract CarnationAuction is ReentrancyGuard {
     error AuctionAlreadyEnded();
     error BidAmountZero();
     error NFTContractAlreadyDefined();
+    error BidAlreadyWithdrawn();
 
     event BidPlaced(uint indexed audioSlotID, address indexed bidder, uint bidAmount);
     event BidEdited(uint indexed audioSlotID, address indexed bidder, uint newBidAmount);
@@ -65,7 +67,7 @@ contract CarnationAuction is ReentrancyGuard {
         if (!success) {revert ETHTransferInFailed();}
 
         // Add bid to bid list for the currentAuction
-        bids[_audioSlotID][msg.sender] = Bid(msg.sender, msg.value);
+        bids[_audioSlotID][msg.sender] = Bid(msg.sender, msg.value, false);
         currentAuction.bidders.push(msg.sender);
 
         emit BidPlaced(_audioSlotID, msg.sender, msg.value);
@@ -93,14 +95,22 @@ contract CarnationAuction is ReentrancyGuard {
         emit BidEdited(_audioSlotID, msg.sender, newBidAmount);
     }
 
-    function withdrawBid(uint _audioSlotID) external nonRentrant {
+    function withdrawBid(uint _audioSlotID) external nonReentrant {
         Auction storage currentAuction = auctions[_audioSlotID];
         Bid storage existingBid = bids[_audioSlotID][msg.sender];
 
         // Check that the auction has finished
         if (block.timestamp < currentAuction.auctionFinishTime) {revert AuctionNotEnded();}
 
-        msg.sender.call{value: existingBid.bidAmount}("");
+        // Check if the bid has been withdrawn already
+        if (existingBid.bidWithdrawn == true) {revert BidAlreadyWithdrawn();}
+
+        // Set the bid to withdrawn
+        existingBid.bidWithdrawn = true;
+
+        // Withdraw the bid
+        (bool success, ) = msg.sender.call{value: existingBid.bidAmount}("");
+        if (!success) {revert ETHTransferInFailed();}
     }
 
     function startAuctionFirst() external {
