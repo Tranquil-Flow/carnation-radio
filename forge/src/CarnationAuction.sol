@@ -13,6 +13,7 @@ contract CarnationAuction is ReentrancyGuard {
 
     struct Auction {
         uint auctionStartTime;
+        uint auctionFinishTime;
         bool auctionFinished;
         string audioName;
         address[] bidders;
@@ -92,6 +93,16 @@ contract CarnationAuction is ReentrancyGuard {
         emit BidEdited(_audioSlotID, msg.sender, newBidAmount);
     }
 
+    function withdrawBid(uint _audioSlotID) external nonRentrant {
+        Auction storage currentAuction = auctions[_audioSlotID];
+        Bid storage existingBid = bids[_audioSlotID][msg.sender];
+
+        // Check that the auction has finished
+        if (block.timestamp < currentAuction.auctionFinishTime) {revert AuctionNotEnded();}
+
+        msg.sender.call{value: existingBid.bidAmount}("");
+    }
+
     function startAuctionFirst() external {
         if (auctionID == 0) {
             startAuction();
@@ -103,9 +114,10 @@ contract CarnationAuction is ReentrancyGuard {
         uint newAuctionID = auctionID++;
         Auction storage currentAuction = auctions[newAuctionID];
 
-        // Set the auction start time
+        // Set the auction start and finish time
         uint currentTime = block.timestamp;
         currentAuction.auctionStartTime = currentTime;
+        currentAuction.auctionFinishTime = currentTime + auctionLength;
 
         emit AuctionStarted(newAuctionID, currentTime);
     }
