@@ -12,7 +12,7 @@ contract CarnationAuction is ReentrancyGuard {
     uint public auctionLength;
     uint public auctionID;
 
-    AudioNFT public audioNFT;
+    CarnationAudioNFT public audioNFT;
 
     struct Auction {
         uint auctionStartTime;
@@ -20,12 +20,15 @@ contract CarnationAuction is ReentrancyGuard {
         bool auctionFinished;
         string audioName;
         address[] bidders;
+        uint highestBid;
+        address highestBidder;
     }
 
     struct Bid {
         address bidder;
         uint bidAmount;
         bool bidWithdrawn;
+        bool winningBid;
     }
 
     mapping(uint => Auction) public auctions;
@@ -37,6 +40,7 @@ contract CarnationAuction is ReentrancyGuard {
     error AuctionAlreadyEnded();
     error BidAmountZero();
     error BidAlreadyWithdrawn();
+    error CannotWithdrawWinningBid();
 
     event BidPlaced(uint indexed audioSlotID, address indexed bidder, uint bidAmount);
     event BidEdited(uint indexed audioSlotID, address indexed bidder, uint newBidAmount);
@@ -50,7 +54,7 @@ contract CarnationAuction is ReentrancyGuard {
         uint _auctionLength,
         address _nftAddress) {
         auctionLength = _auctionLength;
-        audioNFT = AudioNFT(_nftAddress);
+        audioNFT = CarnationAudioNFT(_nftAddress);
         startAuction();
     }
 
@@ -72,7 +76,7 @@ contract CarnationAuction is ReentrancyGuard {
         if (!success) {revert ETHTransferInFailed();}
 
         // Add bid to bid list for the currentAuction
-        bids[_audioSlotID][msg.sender] = Bid(msg.sender, msg.value, false);
+        bids[_audioSlotID][msg.sender] = Bid(msg.sender, msg.value, false, false);
         currentAuction.bidders.push(msg.sender);
 
         emit BidPlaced(_audioSlotID, msg.sender, msg.value);
@@ -116,6 +120,9 @@ contract CarnationAuction is ReentrancyGuard {
         // Check if the bid has been withdrawn already
         if (existingBid.bidWithdrawn == true) {revert BidAlreadyWithdrawn();}
 
+        // Check if the bid is the winning bid
+        if (existingBid.winningBid == true) {revert CannotWithdrawWinningBid();}
+
         // Set the bid to withdrawn
         existingBid.bidWithdrawn = true;
 
@@ -143,45 +150,49 @@ contract CarnationAuction is ReentrancyGuard {
     function endAuction(uint _audioSlotID) external {
         Auction storage currentAuction = auctions[_audioSlotID];
 
-        // Check if the auction has ended
+        // Check  if the auction has ended
         if (block.timestamp < currentAuction.auctionStartTime + auctionLength) {revert AuctionNotEnded();}
 
         // Check if endAuction has already been called
         if (auctions[_audioSlotID].auctionFinished) {revert AuctionAlreadyEnded();}
 
         // Get highest bidder
-        address highestBidder;
-        uint highestBid;
+        address _highestBidder;
+        uint _highestBid;
 
         for (uint i = 0; i < currentAuction.bidders.length; i++) {
             address bidder = currentAuction.bidders[i];
             uint _bidAmount = bids[_audioSlotID][bidder].bidAmount;
-            if (_bidAmount > highestBid) {
-                highestBid = _bidAmount;
-                highestBidder = bidder;
-            }
+            if (_bidAmount > _highestBid) {
+                _highestBid = _bidAmount;
+                _highestBidder = bidder;
+           }
         }
 
-        uint swarmHostingCost;
+        // uint swarmHostingCost;
         string memory swarmLink;        
         // Implement Swarm hosting logic here 
 
         // Check a bid occured
-        if (highestBidder != address(0)) {
+        if (_highestBidder != address(0)) {
             // If so, mint NFT to the highest bidder
-            audioNFT.mint(highestBidder, swarmLink);
+            audioNFT.mint(_highestBidder, swarmLink);
         }
 
         // End the auction
         currentAuction.auctionFinished = true;
+        
+        // Set the bid as the winning bid and define highest bid info
+        Bid storage winningBid = bids[_audioSlotID][_highestBidder];
+        winningBid.winningBid = true;
+        currentAuction.highestBidder = _highestBidder;
+        currentAuction.highestBid = _highestBid;
 
-        // Set the winnning bid to 0
-        bids[_audioSlotID][highestBidder].bidAmount = 0;
 
         // Start a new auction
         startAuction();
 
-        emit AuctionEnded(_audioSlotID, highestBidder, highestBid, swarmLink);
+        emit AuctionEnded(_audioSlotID, _highestBidder, _highestBid, swarmLink);
     }
 
 }
