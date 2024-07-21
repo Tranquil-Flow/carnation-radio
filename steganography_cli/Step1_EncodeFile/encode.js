@@ -7,7 +7,7 @@ const fftUtil = require('fft-js').util;
 const flac = require('flac-bindings');
 const { hideBin } = require('yargs/helpers');
 
-const { sampleRate, f0, f1, bitDuration, outputOriginalPercentage, outputSubsonicPercentage, signalstring } = require('../constants');
+const { sampleRate, f0, f1, bitDuration, outputOriginalPercentage, outputSubsonicPercentage, signalstring } = require('./constants');
 
 const argv = yargs(hideBin(process.argv)).argv._;
 
