@@ -35,7 +35,7 @@ Key features:
 - The resulting low bits are statistically random, providing plausible deniability
 - After encoding, the modified bits represent white noise at around -90 dB
 - Supports 16-bit PCM WAV files
-- Has a maximum message size limit of 256KB
+- Has a maximum message size limit of 256KB (not a hard limit, can be increased through R&D)
 - Uses random offsets to make detection more difficult
 
 Usage remains the same as previously described. The program still uses a 33MB buffer (BUFSIZE) for processing audio data.
@@ -43,7 +43,7 @@ Usage remains the same as previously described. The program still uses a 33MB bu
 This implementation provides strong security through:
 
 1. The need for a 128-bit handshake pattern to even detect a hidden message
-2. An additional 128-bit blinding key to decode the message
+2. An additional 128-bit blinding key to decode the message, so that you  can't try to discover the message by bruteforcing every single offset 
 3. AES-128 encryption of the actual message
 4. Statistical indistinguishability of the modified bits from random noise
 
