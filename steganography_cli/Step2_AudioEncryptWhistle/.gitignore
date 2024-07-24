@@ -7,3 +7,4 @@ whistle
 tmp/
 music/
 test.sh
+*.decrypted
