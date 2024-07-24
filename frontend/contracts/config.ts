@@ -1,0 +1,1 @@
+export const carnationAuctionAddress = '0x0000000000000000000000000000000000000000' as `0x${string}`
