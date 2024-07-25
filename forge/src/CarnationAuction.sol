@@ -142,6 +142,7 @@ contract CarnationAuction is ReentrancyGuard {
         currentAuction.auctionStartTime = currentTime;
         currentAuction.auctionFinishTime = currentTime + auctionLength;
 
+        auctionID++;
         emit AuctionStarted(newAuctionID, currentTime);
     }
 
