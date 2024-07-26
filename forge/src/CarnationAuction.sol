@@ -34,13 +34,15 @@ contract CarnationAuction is ReentrancyGuard {
     mapping(uint => Auction) public auctions;
     mapping(uint => mapping(address => Bid)) public bids;
 
-    error ETHTransferInFailed();
     error AuctionNotStarted();
     error AuctionNotEnded();
     error AuctionAlreadyEnded();
     error BidAmountZero();
     error BidAlreadyWithdrawn();
     error CannotWithdrawWinningBid();
+    error AuctionNonExistent();
+    error BidTooLow();
+    error ETHTransferOutFailed();
 
     event BidPlaced(uint indexed audioSlotID, address indexed bidder, uint bidAmount);
     event BidEdited(uint indexed audioSlotID, address indexed bidder, uint newBidAmount);
@@ -61,19 +63,20 @@ contract CarnationAuction is ReentrancyGuard {
     function placeBid(uint _audioSlotID) external payable nonReentrant {
         Auction storage currentAuction = auctions[_audioSlotID];
 
+        // Check if the auction exists
+        require(currentAuction.auctionStartTime != 0, "Auction does not exist");
+
         // Check if the auction is ongoing
-        if (block.timestamp < currentAuction.auctionStartTime) {revert AuctionNotStarted();}
-        if (block.timestamp > currentAuction.auctionStartTime + auctionLength) {revert AuctionAlreadyEnded();}
+        if (block.timestamp < currentAuction.auctionStartTime) revert AuctionNotStarted();
+        if (block.timestamp > currentAuction.auctionFinishTime) revert AuctionAlreadyEnded();
 
-        // Check bid amount is greater than zero
-        if (msg.value == 0) {revert BidAmountZero();}
+        // Check bid amount is greater than zero and higher than current highest bid
+        if (msg.value == 0) revert BidAmountZero();
+        if (msg.value <= currentAuction.highestBid) revert BidTooLow();
 
-        // Transfer the bid amount to the contract
-        (bool success, ) = address(this).call{value: msg.value}("");
-        if (!success) {revert ETHTransferInFailed();}
-
-        // Add bid to bid list for the currentAuction
-        bids[_audioSlotID][msg.sender] = Bid(msg.sender, msg.value, false, false);
+        // Update auction information
+        currentAuction.highestBid = msg.value;
+        currentAuction.highestBidder = msg.sender;
         currentAuction.bidders.push(msg.sender);
 
         emit BidPlaced(_audioSlotID, msg.sender, msg.value);
@@ -85,21 +88,27 @@ contract CarnationAuction is ReentrancyGuard {
     function editBid(uint _audioSlotID) external payable nonReentrant {
         Auction storage currentAuction = auctions[_audioSlotID];
         Bid storage existingBid = bids[_audioSlotID][msg.sender];
-
+        
         // Check the auction is ongoing
-        if (block.timestamp < currentAuction.auctionStartTime) {revert AuctionNotStarted();}
-        if (block.timestamp > currentAuction.auctionStartTime + auctionLength) {revert AuctionAlreadyEnded();}
+        if (block.timestamp < currentAuction.auctionStartTime) revert AuctionNotStarted();
+        if (block.timestamp > currentAuction.auctionStartTime + auctionLength) revert AuctionAlreadyEnded();
 
-        // Check bid amount is greater than zero
-        if (msg.value == 0) {revert BidAmountZero();}
+        // Calculate the new total bid amount
+        uint newBidAmount = existingBid.bidAmount + msg.value;
 
-        // Transfer the bid amount to the contract
-        (bool success, ) = address(this).call{value: msg.value}("");
-        if (!success) {revert ETHTransferInFailed();}
+        // Check bid amount is greater than zero and higher than the current highest bid
+        if (msg.value == 0) revert BidAmountZero();
+        if (newBidAmount <= currentAuction.highestBid) revert BidTooLow();
+
+        // Check if the new bid amount is higher than the current highest bid 
+        if (newBidAmount <= currentAuction.highestBid) revert BidTooLow();
 
         // Update the bid amount
-        uint newBidAmount = existingBid.bidAmount + msg.value;
         existingBid.bidAmount = newBidAmount;
+
+        // Update the auction information
+        currentAuction.highestBid = newBidAmount;
+        currentAuction.highestBidder = msg.sender;
 
         emit BidEdited(_audioSlotID, msg.sender, newBidAmount);
     }
@@ -125,7 +134,7 @@ contract CarnationAuction is ReentrancyGuard {
 
         // Withdraw the bid
         (bool success, ) = msg.sender.call{value: existingBid.bidAmount}("");
-        if (!success) {revert ETHTransferInFailed();}
+        if (!success) {revert ETHTransferOutFailed();}
     }
 
     /// @dev Creates a new auction
