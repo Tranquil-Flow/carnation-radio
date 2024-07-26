@@ -48,12 +48,9 @@ contract CarnationAuction is ReentrancyGuard {
     event AuctionEnded(uint indexed audioSlotID, address indexed winner, uint winningBid, string swarmLink);
 
     /// @notice Initializes key state variables and starts the first auction
-    /// @param _auctionLength The length each auction will run for in seconds (default of 3600 (1 day))
     /// @param _nftAddress The address of the AudioNFT that will be bid upon and minted after each auction 
-    constructor(
-        uint _auctionLength,
-        address _nftAddress) {
-        auctionLength = _auctionLength;
+    constructor(address _nftAddress) {
+        auctionLength = 3600; // 1 day per auction
         audioNFT = CarnationAudioNFT(_nftAddress);
         startAuction();
     }
