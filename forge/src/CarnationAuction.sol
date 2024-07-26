@@ -131,16 +131,15 @@ contract CarnationAuction is ReentrancyGuard {
     /// @dev Creates a new auction
     function startAuction() internal {
         // Create auction with new ID
-        uint newAuctionID = auctionID++;
-        Auction storage currentAuction = auctions[newAuctionID];
+        auctionID++;
+        Auction storage currentAuction = auctions[auctionID];
 
         // Set the auction start and finish time
         uint currentTime = block.timestamp;
         currentAuction.auctionStartTime = currentTime;
         currentAuction.auctionFinishTime = currentTime + auctionLength;
 
-        auctionID++;
-        emit AuctionStarted(newAuctionID, currentTime);
+        emit AuctionStarted(auctionID, currentTime);
     }
 
     /// @notice Ends the last auction and begins the next auction
