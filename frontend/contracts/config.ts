@@ -1,1 +1,1 @@
-export const carnationAuctionAddress = '0x0000000000000000000000000000000000000000' as `0x${string}`
+export const carnationAuctionAddress = '0x352EacD9de1e94094D2846e8EDf7E13df3976E42' as `0x${string}`
