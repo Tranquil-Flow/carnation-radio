@@ -1,4 +1,4 @@
-# Milestone: Phase 1 — Steganography Engine (complete the TypeScript port)
+# Milestone: Phase 1 — MVP (Rust/WASM Stego Engine + Frontend)
 
 ## Tasks
 
@@ -10,54 +10,46 @@
 - [x] Test survival against MP3 compression at 128kbps+ (`steganography_cli/engine/test_mp3.py`)
 - [x] Write unit tests (`steganography_cli/engine/test_patchwork.py`)
 
-### Architecture Decision — MADE (see PLAN.md § Architectural Decision Summary 2026)
-The 2026 literature review concludes neural watermarking is the right approach for the TypeScript port:
-- **Encoder**: IDEAW (ONNX-exportable, <10ms CPU encode/detect)
-- **Decoder**: XAttnMark fast detector — no full inversion required, real-time safe for Web Audio API
-- Full rationale in PLAN.md — do not relitigate this decision, proceed with ONNX approach
+### Rust/WASM Stego Engine (`carnation-stego/`) — DONE
+- [x] MT19937 PRNG matching numpy (rejection sampling bitmask)
+- [x] FFT-based DCT-II/IDCT-II matching scipy ortho normalization
+- [x] Patchwork bit embedding/extraction with adaptive delta
+- [x] 17x interleaved repetition coding with majority vote
+- [x] Wire format: `0xCAFEBABE` sync + length + version + payload
+- [x] Full encode/decode pipeline with double SHA-256 key chain
+- [x] WASM exports: `wasm_encode`, `wasm_decode`, `FrameDecoder`
+- [x] Cross-compatibility: Rust decodes Python-encoded audio
+- [x] PRNG compat tests against Python vectors
+- [x] DCT compat tests against scipy vectors
+- [x] Round-trip tests (basic, wrong key, long message, capacity overflow)
 
-### Benchmark (one-time validation before committing to ONNX path)
-- [ ] Run IDEAW inference against Python prototype on the same test corpus — measure bit accuracy at 128kbps MP3; if >95% and <10ms decode latency in browser → confirmed, proceed; if not → fall back to BCH-enhanced classical port (document result either way)
+### Frontend Integration (`frontend/`) — DONE
+- [x] AES-256-GCM + scrypt crypto matching Python (`lib/crypto.ts`)
+- [x] Wire format version detection (`lib/wire.ts`)
+- [x] ECIES encryption + ENS resolution (`lib/ecies.ts`)
+- [x] WASM stego module loader (`lib/stego.ts`)
+- [x] ffmpeg.wasm transcoding wrapper (`lib/transcode.ts`)
+- [x] AudioWorklet decode processor with `input[i] * 32768.0` scaling
+- [x] Carnation dark theme (DaisyUI, primary #DC143C)
+- [x] UI components: AudioDropzone, EncryptionModeToggle, PasswordInput, WalletRecipient, EncodeProgress, MessageReveal, AudioPlayer
+- [x] Encode/decode views in `app/page.tsx`
+- [x] E2E tests: crypto + wire format + cross-compat decrypt
+- [x] Crypto cross-compat: TypeScript decrypts Python-encrypted ciphertext
 
-### TypeScript Engine (`frontend/src/stego/`)
-- [ ] Set up `onnxruntime-web` in the Next.js frontend
-- [ ] Implement `encode(audioBuffer: AudioBuffer, message: string, key: string): Promise<AudioBuffer>` — wraps ONNX IDEAW encoder
-- [ ] Implement `decode(audioBuffer: AudioBuffer, key: string): Promise<string | null>` — wraps XAttnMark fast detector
-- [ ] Port AES-256-GCM layer from Python using Web Crypto API (`crypto.ts`) — same wire format (`\xCAFEBABE` + 4-byte length + encrypted payload)
-- [ ] Wire key derivation equivalent to Python scrypt KDF using SubtleCrypto PBKDF2
-- [ ] Unit tests: round-trip encode→decode, noise tolerance, wrong key returns null, cross-compat with Python prototype output
-- [ ] MP3 survival test: encode in TypeScript → compress to MP3 via ffmpeg.wasm → decode, assert >90% bit accuracy
+### Build & Docs — IN PROGRESS
+- [x] Update CLAUDE.md, PLAN.md, TASKS.md
+- [ ] Build WASM to frontend (`wasm-pack build --target web --features wasm`)
+- [ ] Build Next.js static export (`npm run build`)
+- [ ] Smoke test: verify static export produces working output
 
-### Web Audio API Real-Time Decoder
-- [ ] Build `RealtimeDecoder` using `AudioWorkletNode` (preferred) or `ScriptProcessorNode` (fallback)
-- [ ] Decoder processes audio frames during playback and runs XAttnMark fast detector per frame
-- [ ] Emit decoded message event as soon as sufficient frames accumulate (ring buffer)
-- [ ] Test: play encoded MP3 in browser → message appears within 5 seconds of playback start
-
-### Demo Webapp (`frontend/app/demo/`)
-- [ ] Encode tab: upload audio file + enter message + key → download stego audio
-- [ ] Decode tab: upload audio file + enter key → display decoded message
-- [ ] End-to-end test: encode in browser → compress to MP3 → decode in browser → message matches
-- [ ] Deploy demo to Vercel
-
-## Phase 2 Preview (Wallet Integration + Encryption Modes)
-ECIES mode (`eciesjs` — encrypt to ETH address, no key exchange needed), Lit Protocol group mode (on-chain access conditions), RainbowKit wallet connect, decentralized audio storage (IPFS/web3.storage). TASKS.md for Phase 2 to be written when Phase 1 ships.
+## Phase 2 Targets
+- Neural watermarking (IDEAW/XAttnMark ONNX) for better MP3 robustness
+- BCH error correction upgrade from 17x repetition coding
+- Wallet-mode decryption in decode view
+- IPFS/Arweave storage integration
+- Lit Protocol group encryption
 
 ## Notes for Claude
-The Python prototype is the reference implementation — do not modify it, it is the ground truth for cross-compatibility testing.
+The Python prototype is the reference implementation — do not modify it.
 
-**Clean-room constraint**: NEVER look at audiowmark source code. All implementations must derive from academic papers cited in PLAN.md.
-
-Key reference parameters (Python prototype):
-- Frame size: 1024 samples, frequency bins 40–350 (~1.7–15kHz), 6 bin pairs per frame
-- Adaptive delta with floor 200.0, 17x interleaved repetition coding
-- SHA-256 keyed bin selection, scrypt KDF, `\xCAFEBABE` sync pattern + 4-byte length header
-
-Key files:
-- `steganography_cli/engine/patchwork.py` — reference encoder
-- `steganography_cli/engine/crypto.py` — reference AES-256-GCM
-- `steganography_cli/engine/test_mp3.py` — MP3 survival test harness (requires ffmpeg)
-- `frontend/` — Next.js app (wallet connect only, no audio yet; npm with package-lock.json)
-- `forge/` — Solidity contracts on Sepolia (CarnationAuction + CarnationAudioNFT, untested)
-
-Python env: `.venv` with Python 3.14, numpy 2.4.2, scipy 1.17.0, pycryptodome 3.23.0. ffmpeg required for MP3 tests.
+**Clean-room constraint**: NEVER look at audiowmark source code.
