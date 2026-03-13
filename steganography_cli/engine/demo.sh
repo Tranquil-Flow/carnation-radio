@@ -8,9 +8,10 @@
 
 set -e
 
-VENV="/Users/evinova/Documents/carnation-radio/.venv/bin/python"
-ENGINE_DIR="/Users/evinova/Documents/carnation-radio/steganography_cli/engine"
-cd "$ENGINE_DIR"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+VENV="${REPO_ROOT}/.venv/bin/python"
+cd "$SCRIPT_DIR"
 
 echo "============================================================"
 echo "  CARNATION RADIO — Steganography Demo"
