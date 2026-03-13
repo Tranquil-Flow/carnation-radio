@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { sha256 } from '@noble/hashes/sha256.js'
+import { sha256 } from '@noble/hashes/sha2.js'
 import AudioDropzone from './components/AudioDropzone'
 import EncryptionModeToggle from './components/EncryptionModeToggle'
 import PasswordInput from './components/PasswordInput'

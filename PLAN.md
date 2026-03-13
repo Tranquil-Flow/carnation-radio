@@ -20,8 +20,8 @@ The fundamental problem: if you need a secure channel to share the key, why not 
 
 | Component | Technology |
 |-----------|-----------|
-| Steganography engine | TypeScript, Web Audio API, DCT-based patchwork (clean-room) |
-| Python prototype | Python, scipy (DCT), numpy, pycryptodome |
+| Steganography engine | Rust → WASM via wasm-pack (rustfft, rand_mt, sha2) |
+| Python prototype | Python, scipy (DCT), numpy, pycryptodome (READ-ONLY reference) |
 | Encryption | AES-256-GCM (raw key), eciesjs (ECIES/wallet), Lit Protocol (group) |
 | Smart contracts | Solidity on Ethereum (Sepolia), Foundry/forge |
 | Frontend | Next.js + RainbowKit + Wagmi + Tailwind + DaisyUI |
@@ -61,8 +61,8 @@ The fundamental problem: if you need a secure channel to share the key, why not 
 
 ## Phased Roadmap
 
-### Phase 1: Steganography Engine ← CURRENT (~50% done)
-Python prototype complete (DCT patchwork, AES-256-GCM, CLI, MP3 survival tests). Remaining: TypeScript port, Web Audio API real-time decoder, demo webapp.
+### Phase 1: Steganography Engine ← CURRENT (~95% done)
+Python prototype complete. Rust/WASM engine complete (clean-room DCT patchwork, cross-compatible with Python). Frontend complete (encode/decode views, crypto, AudioWorklet). Remaining: final build verification.
 
 ### Phase 2: Wallet Integration + Encryption Modes
 ECIES mode (wallet-to-wallet via eciesjs), Lit Protocol mode (group/token-gated), wallet connect (RainbowKit), decentralized storage (IPFS/web3.storage).
@@ -99,10 +99,11 @@ Multiple 2025 papers converge on BCH error correcting codes for MP3 robustness (
 
 ## Existing Code
 
-- `steganography_cli/engine/` — Working Python prototype (patchwork.py, crypto.py, cli.py, tests)
-- `steganography_cli/` — Old hackathon code (LSB + subsonic, both broken for radio use)
+- `carnation-stego/` — Rust/WASM stego engine (complete, cross-compatible with Python)
+- `steganography_cli/engine/` — Python prototype (READ-ONLY reference)
+- `steganography_cli/` — Old hackathon code (LSB + subsonic, archived)
 - `forge/` — CarnationAuction.sol + CarnationAudioNFT.sol on Sepolia (no tests)
-- `frontend/` — Next.js shell (wallet connect only, no audio/stego)
+- `frontend/` — Next.js 14 app with encode/decode views, crypto, WASM stego integration
 
 ## Research Updates (2026)
 
