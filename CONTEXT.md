@@ -1,4 +1,4 @@
-# Carnation FM — Project Context
+# Carnation Radio — Project Context
 
 ## Project Type
 Decentralized audio steganography platform. Hide encrypted messages in music, broadcast publicly, decode in browser.
@@ -10,45 +10,83 @@ The steganography engine MUST be a clean-room implementation from academic paper
 - Spread spectrum steganography literature
 
 ## Current Implementation State
-**Python prototype complete** at `steganography_cli/engine/`:
-- `patchwork.py` — DCT-based MPA (1024-sample frames, bins 40-350, 6 pairs/frame, adaptive delta, 17x interleaved repetition coding)
-- `crypto.py` — AES-256-GCM + scrypt KDF
-- `carnation.py` — High-level API (hide_message / reveal_message)
-- `cli.py` — argparse CLI (encode/decode)
-- `test_patchwork.py` — Unit tests (round-trip, noise, SNR >20dB)
-- `test_mp3.py` — MP3 survival at 128k/192k/256k/320k + OGG
 
-**Not started**: TypeScript port, Web Audio API decoder, demo webapp.
+### Rust/WASM Stego Engine (`carnation-stego/`)
+Complete clean-room implementation compiled to WASM (~212KB):
+- `src/prng.rs` — MT19937 PRNG matching numpy (rejection sampling bitmask, NOT modulo)
+- `src/dct.rs` — FFT-based DCT-II/IDCT-II matching scipy ortho normalization
+- `src/patchwork.rs` — Bit embedding/extraction with adaptive delta and sign preservation
+- `src/coding.rs` — 17x interleaved repetition coding with majority vote
+- `src/framing.rs` — Wire format: `0xCAFEBABE` sync + length + version + payload
+- `src/lib.rs` — `encode()` / `decode()` with double SHA-256 key chain
+- `src/wasm.rs` — WASM exports: `wasm_encode`, `wasm_decode`, `FrameDecoder`
+
+Constants: FRAME_SIZE=1024, PAIRS_PER_FRAME=6, FREQ_BIN_LOW=40, FREQ_BIN_HIGH=350, DELTA_STRENGTH=200.0, REPETITION=17
+
+### Key Derivation Chain
+```
+passphrase → embed_key = SHA-256("carnation-embed:" + passphrase)
+           → key_hash = SHA-256(embed_key) → per-frame PRNG seed
+```
+The double SHA-256 is applied inside the Rust engine. Frontend derives `embed_key` and passes it in.
+
+### Frontend (`frontend/`)
+Next.js 14 static export with:
+- `lib/crypto.ts` — AES-256-GCM + scrypt (matches Python prototype)
+- `lib/wire.ts` — Version byte detection
+- `lib/ecies.ts` — ECIES encryption + ENS resolution
+- `lib/stego.ts` — WASM module loader
+- `lib/transcode.ts` — ffmpeg.wasm wrapper (any format → PCM → MP3)
+- `public/worklet/decode-processor.js` — AudioWorklet (scales `input[i] * 32768.0`)
+- `app/page.tsx` — Encode/decode tabs with full pipeline
+- 7 UI components: AudioDropzone, EncryptionModeToggle, PasswordInput, WalletRecipient, EncodeProgress, MessageReveal, AudioPlayer
+- Carnation dark theme (DaisyUI, primary #DC143C)
+
+### Python Prototype (`steganography_cli/engine/`) — READ ONLY
+- `patchwork.py` — Reference implementation (DO NOT MODIFY)
+- `crypto.py` — AES-256-GCM + scrypt KDF
+- `carnation.py` — High-level API
+- Tests: `test_patchwork.py`, `test_mp3.py`
+
+### Cross-Compatibility
+- Rust decodes Python-encoded audio (verified via `tests/cross_compat.rs`)
+- TypeScript decrypts Python-encrypted ciphertext (verified via `frontend/lib/__tests__/e2e.test.ts`)
 
 ## Tech Stack
-- **Stego engine (prototype)**: Python, scipy (DCT), numpy, pycryptodome
-- **Stego engine (target)**: TypeScript, Web Audio API / JS FFT library
-- **Encryption**: AES-256-GCM (raw key), eciesjs (ECIES/wallet), Lit Protocol (group)
+- **Stego engine**: Rust → WASM via wasm-pack (rustfft, rand_mt, sha2)
+- **Encryption**: AES-256-GCM + scrypt (Web Crypto), eciesjs (ECIES/wallet)
+- **Frontend**: Next.js 14 + RainbowKit + Wagmi + Tailwind + DaisyUI
+- **Audio**: ffmpeg.wasm (transcoding), AudioWorklet (real-time decode)
 - **Smart contracts**: Solidity on Ethereum (Sepolia), Foundry/forge
-- **Frontend**: Next.js + RainbowKit + Wagmi + Tailwind + DaisyUI
-- **Storage**: IPFS/web3.storage, Arweave, or Swarm
 
-## Existing Code (from hackathon, mostly broken)
-- `steganography_cli/` — Old LSB encoder (C) and subsonic encoder (JS). Both broken for radio use.
-- `steganography_cli/engine/` — NEW working Python prototype (patchwork algorithm)
-- `forge/` — CarnationAuction.sol and CarnationAudioNFT.sol deployed on Sepolia. No tests.
-- `frontend/` — Next.js shell with wallet connect only. No audio playback or contract interaction.
+## Build Commands
+```bash
+# WASM build
+cd carnation-stego && wasm-pack build --target web --features wasm --out-dir ../frontend/public/wasm
 
-## Key Academic References
-- Yeo & Kim, 2003 — Modified Patchwork Algorithm (foundation)
-- Natgunanathan et al. 2012 — Formal patchwork improvement, buffer compensation
-- Zhang et al. 2025 (RASF) — Surviving AAC/MP3 codec block boundaries
-- Cruz & Jovanovic-Dolecek 2024 — Real-time watermark latency (Web Audio API design)
-- AudioSeal (Meta, 2024) — Perceptual masking loss, fast detector (open-source)
-- RAW-Bench (Sony, 2025) — Standardized evaluation benchmark
-- IDEAW (Li et al. 2024) — Invertible dual-embedding neural watermarking, 95%+ bit accuracy at 128kbps MP3, <10ms encode/detect on CPU. ONNX-exportable for browser target.
-- XAttnMark (Liu et al., ICML 2025) — Cross-attention watermarking, 99.3% bit accuracy, survives OGG Vorbis. Fast detector (no full inversion) enables real-time Web Audio API decode.
-- Survey (Salah et al. 2024) — Comprehensive comparison showing neural > classical+BCH for MP3/AAC robustness. Informs TS port architecture decision.
+# Frontend
+cd frontend && npm run build
+
+# Tests
+cd carnation-stego && cargo test
+cd frontend && npx vitest run
+```
+
+## Design Documents
+- `docs/superpowers/specs/2026-03-13-phase1-mvp-design.md` — Full design spec
+- `docs/superpowers/plans/2026-03-13-phase1-mvp-plan.md` — Implementation plan
+
+## Phase 2 Targets
+- Neural watermarking (IDEAW/XAttnMark ONNX models) for better MP3 robustness
+- BCH error correction upgrade from 17x repetition coding
+- Wallet-mode decryption in decode view
+- IPFS/Arweave storage integration
 
 ## Python Environment
 `.venv` with Python 3.14, numpy 2.4.2, scipy 1.17.0, pycryptodome 3.23.0. Tests require ffmpeg for MP3 encoding.
 
-## Key Design Decisions
-- TypeScript port must maintain identical embedding parameters for cross-compatibility with Python prototype
-- Consider BCH error correction as upgrade from 17x repetition coding (better capacity, same robustness — see 2025 literature)
-- Web Audio API decoder must work in real-time during playback (latency is a critical constraint)
+## Key Academic References
+- Yeo & Kim, 2003 — Modified Patchwork Algorithm (foundation)
+- Natgunanathan et al. 2012 — Formal patchwork improvement, buffer compensation
+- IDEAW (Li et al. 2024) — Invertible dual-embedding neural watermarking (Phase 2)
+- XAttnMark (Liu et al., ICML 2025) — Cross-attention watermarking (Phase 2)
