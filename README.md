@@ -1,28 +1,106 @@
-<div align="center">
-  <h1 align="center">🔏 CarnationFM</h1>
- 
-![Screenshot 2024-05-26 105040](https://github.com/Tranquil-Flow/carnation-radio/assets/101796507/4f0eaaac-e9d8-46f1-8b8f-9346535414d9)
-</div>
+# Carnation Radio
 
-Established systems are failing. 
+Decentralized encrypted communication hidden in music via audio steganography. Messages are encrypted, embedded in audio frequency coefficients, and survive MP3 compression. Only someone with the right passphrase can extract and decrypt the hidden message.
 
-Carnation is an experiment in decentralized and encrypted communication with a focus on music as transport vessel caring hidden messages. It empowers users to broadcast their voice and coordinate with others securely and privately all while safeguarding their anonymity.
-Contribute with an audio file (wav, flac) and weave in an encrypted message into to subsonic frequencies. This hidden channel allows for discreet communication.
+## How It Works
 
-![user flow (2)](https://github.com/Tranquil-Flow/carnation-radio/assets/101796507/135f25c7-0fb4-402a-b1a0-7464657b0ce7)
+1. **Encode**: Upload audio + type a secret message + set a passphrase. The message is AES-256-GCM encrypted, then embedded into DCT frequency coefficients using a modified patchwork algorithm. Output is a normal-sounding MP3.
+2. **Decode**: Upload the encoded audio + enter the passphrase. The steganography engine extracts the hidden bits and decrypts the message.
 
-Carnation prioritizes anonymity, letting your voice be heard without compromising your safety. It thrives on community. It's a space for collaboration, where people can unite and coordinate towards a shared vision.
-Imagine the underprivileged individuals and collectives whose message is embedded in the music, broadcasted for all to hear, yet only those who know where to look can decipher it.
+The embedding uses 17x interleaved repetition coding for error correction, allowing messages to survive lossy MP3 compression.
 
-**Check out our slides - [here](https://github.com/Tranquil-Flow/carnation-radio/blob/main/SLIDES.md) <br><br>**
-**Check out our demo - [here](https://kapture-debelg-debelgs-projects.vercel.app/) <br><br>**
+## Architecture
 
-We have created [CLI](https://github.com/Tranquil-Flow/carnation-radio/tree/main/whistle) for encryption of the message into the wav file which is then uploaded onto **ETHSwarm** decentralized data storage. We have deployed our frontend via **Scaffold-ETH2** and deployed our smart contracts for auction of the 24h playlist NFT (funding mechanism for data storage) on ETHSepolia.
+```
+steganography_cli/engine/   Python prototype (reference implementation, read-only)
+carnation-stego/            Rust stego engine → compiled to WASM (~212KB)
+  src/prng.rs                 MT19937 PRNG (numpy-compatible)
+  src/dct.rs                  FFT-based DCT-II/IDCT-II (scipy-compatible)
+  src/patchwork.rs            Bit embedding/extraction
+  src/coding.rs               17x interleaved repetition coding
+  src/framing.rs              Wire format (sync + length + version + payload)
+  src/lib.rs                  encode() / decode() pipeline
+  src/wasm.rs                 WASM exports
+frontend/                   Next.js 14 web app
+  lib/crypto.ts               AES-256-GCM + scrypt encryption
+  lib/stego.ts                WASM module loader
+  lib/transcode.ts            ffmpeg.wasm audio transcoding
+  app/page.tsx                Encode/decode UI
+```
 
-Details of the subsonic steganography scheme and instructions can be explored - [here](https://github.com/Tranquil-Flow/carnation-radio/tree/main/steganography_cli)
+## Prerequisites
 
-![tech stack (2)](https://github.com/Tranquil-Flow/carnation-radio/assets/101796507/874b9f9b-c39a-48e0-b6eb-5687fec31f51)
+- **Node.js** 18.17+ (`node --version`)
+- **Rust** stable (`rustc --version`)
+- **wasm-pack** (`cargo install wasm-pack`)
+- **Python** 3.11+ (optional, only for running prototype tests)
+- **ffmpeg** (optional, only for Python MP3 survival tests)
 
-Auction.sol on Sepolia - [here](https://sepolia.etherscan.io/address/0x4894421a7c0bc369a5c10ddbaf4dbc7cf3b72ae5#code)
+## Quick Start
 
-AudioSetNFT.sol on Sepolia - [here](https://sepolia.etherscan.io/address/0x75993080804d364419445175c5a543eda6a20bb0#code)
+```bash
+# Clone
+git clone <repo-url> && cd carnation-radio
+
+# Build WASM (only needed if you modify Rust code — pre-built WASM is committed)
+cd carnation-stego
+wasm-pack build --target web --features wasm
+cp -r pkg/* ../frontend/public/wasm/
+cd ..
+
+# Start frontend
+cd frontend
+cp .env.example .env.local  # Edit with your Alchemy API keys (optional for basic use)
+npm install
+npm run dev
+```
+
+Open http://localhost:3000 — use the Encode tab to hide a message, Decode tab to extract it.
+
+## Running Tests
+
+```bash
+# Rust tests (21 tests: unit + integration + cross-compat)
+cd carnation-stego && cargo test
+
+# Frontend tests (7 tests: crypto + wire format + E2E)
+cd frontend && npx vitest run
+
+# Python prototype tests (optional)
+cd steganography_cli/engine
+python -m pytest test_patchwork.py -v
+python -m pytest test_mp3.py -v  # requires ffmpeg
+```
+
+## Static Build
+
+```bash
+cd frontend
+npm run build    # Outputs to frontend/out/
+```
+
+Note: COOP/COEP headers for SharedArrayBuffer must be configured at the hosting level (e.g., Vercel `vercel.json`, Netlify `_headers`).
+
+## Encryption Modes
+
+- **Password mode** (implemented): AES-256-GCM with scrypt KDF. Passphrase shared out-of-band.
+- **Wallet mode** (planned): ECIES encryption to an Ethereum address. No key exchange needed.
+
+## Key Derivation
+
+```
+passphrase → embed_key = SHA-256("carnation-embed:" + passphrase)
+           → AES key via scrypt(passphrase)
+```
+
+The embed key controls which frequency bins are used for embedding. The AES key encrypts the message payload. Different keys mean you can't even detect that a message exists.
+
+## Academic Foundation
+
+Clean-room implementation based on:
+- Yeo & Kim, 2003 — Modified Patchwork Algorithm
+- Natgunanathan et al., 2012 — Formal patchwork improvement
+
+## License
+
+TBD
