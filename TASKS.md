@@ -36,11 +36,11 @@
 - [x] E2E tests: crypto + wire format + cross-compat decrypt
 - [x] Crypto cross-compat: TypeScript decrypts Python-encrypted ciphertext
 
-### Build & Docs — IN PROGRESS
+### Build & Docs — DONE
 - [x] Update CONTEXT.md, PLAN.md, TASKS.md
-- [ ] Build WASM to frontend (`wasm-pack build --target web --features wasm`)
-- [ ] Build Next.js static export (`npm run build`)
-- [ ] Smoke test: verify static export produces working output
+- [x] Build WASM to frontend (`wasm-pack build --target web --features wasm`)
+- [x] Build Next.js static export (`npm run build`)
+- [x] Smoke test: verify static export produces working output
 
 ## Phase 2 Targets
 - Neural watermarking (IDEAW/XAttnMark ONNX) for better MP3 robustness
