@@ -209,14 +209,14 @@ https://carnation.radio/#claim&key=<base64url(32-byte AES key)>&for=<checksumAdd
 - [x] No logic changes needed — the derive/encrypt/decrypt functions stay the same
 
 ### 12. Tests
-- [ ] `lib/__tests__/encrypt-to-address.test.ts`
+- [x] `lib/__tests__/encrypt-to-address.test.ts`
   - Mock registry returning a pubkey → verify Mode A payload + null claimLink
   - Mock registry returning null → verify Mode B payload + valid claim link
   - Verify claim link key decrypts Mode B payload correctly
   - Verify VERSION bytes are correct in each mode
-- [ ] `lib/__tests__/registry.test.ts`
+- [x] `lib/__tests__/registry.test.ts`
   - Mock viem publicClient, verify lookup/register calls
-- [ ] `lib/__tests__/claim-link.test.ts`
+- [x] `lib/__tests__/claim-link.test.ts`
   - Parse claim link URL fragment → extract key and address
   - Round trip: generate claim link → parse → decrypt
 
