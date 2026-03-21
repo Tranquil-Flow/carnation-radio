@@ -113,11 +113,11 @@ https://carnation.radio/#claim&key=<base64url(32-byte AES key)>&for=<checksumAdd
 - [ ] Record deployed addresses in `frontend/lib/registry.ts`
 
 ### 2. Registry Client (`frontend/lib/registry.ts`)
-- [ ] `lookupRegistry(address: string): Promise<string | null>`
+- [x] `lookupRegistry(address: string): Promise<string | null>`
   - Uses viem publicClient to call `lookup(address)` on CarnationRegistry
   - Returns compressed pubkey hex (66 chars) or null if not registered
   - Tries Base mainnet first, falls back to Sepolia for testing
-- [ ] `registerSelf(walletClient: WalletClient, derivedPubkeyHex: string): Promise<Hash>`
+- [x] `registerSelf(walletClient: WalletClient, derivedPubkeyHex: string): Promise<Hash>`
   - Calls `register(compressedPubkey)` — sends an on-chain tx
   - Recipient pays gas (minimal, ~30k gas)
 
@@ -197,16 +197,16 @@ https://carnation.radio/#claim&key=<base64url(32-byte AES key)>&for=<checksumAdd
   - Remove the manual pubkey paste field entirely (not needed anymore)
 
 ### 10. Update `lib/wire.ts`
-- [ ] Add VERSION.CLAIM = 0x03
-- [ ] Update `detectVersion()` to handle new byte
-- [ ] Add `parseClaimPayload(data: Uint8Array): { recipientAddress: string, nonce: Uint8Array, ciphertext: Uint8Array }`
+- [x] Add VERSION.CLAIM = 0x03
+- [x] Update `detectVersion()` to handle new byte
+- [x] Add `parseClaimPayload(data: Uint8Array): { recipientAddress: string, nonce: Uint8Array, ciphertext: Uint8Array }`
 
 ### 11. Update `lib/wallet-crypto.ts`
-- [ ] Rename WALLET_SIGN_MESSAGE to something clearer — `CARNATION_DERIVE_MESSAGE`
-- [ ] Add JSDoc clarifying: this message is signed to derive the Carnation keypair.
+- [x] Rename WALLET_SIGN_MESSAGE to something clearer — `CARNATION_DERIVE_MESSAGE`
+- [x] Add JSDoc clarifying: this message is signed to derive the Carnation keypair.
   It is deterministic (RFC 6979) — same wallet always produces the same signature → same keypair.
   The signature never leaves the device. No transaction is created.
-- [ ] No logic changes needed — the derive/encrypt/decrypt functions stay the same
+- [x] No logic changes needed — the derive/encrypt/decrypt functions stay the same
 
 ### 12. Tests
 - [ ] `lib/__tests__/encrypt-to-address.test.ts`
