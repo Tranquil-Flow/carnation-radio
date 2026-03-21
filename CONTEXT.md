@@ -30,6 +30,11 @@ passphrase → embed_key = SHA-256("carnation-embed:" + passphrase)
 ```
 The double SHA-256 is applied inside the Rust engine. Frontend derives `embed_key` and passes it in.
 
+#### Version Bytes (wire format payload header)
+- `VERSION.PASSWORD` = 0x01 — AES key derived from scrypt passphrase
+- `VERSION.WALLET`   = 0x02 — AES key encrypted via ECIES to recipient pubkey
+- `VERSION.CLAIM`    = 0x03 — ephemeral AES key, decrypted via claim link
+
 ### Frontend (`frontend/`)
 Next.js 14 static export with:
 - `lib/crypto.ts` — AES-256-GCM + scrypt (matches Python prototype)
@@ -37,10 +42,17 @@ Next.js 14 static export with:
 - `lib/ecies.ts` — ECIES encryption + ENS resolution
 - `lib/stego.ts` — WASM module loader
 - `lib/transcode.ts` — ffmpeg.wasm wrapper (any format → PCM → MP3)
+- `lib/registry.ts` — CarnationRegistry client (`lookupRegistry`, `registerSelf` via viem)
+- `lib/encrypt-to-address.ts` — Sender encryption: Mode A (ECDH via registry) or Mode B (ephemeral + claim link)
+- `lib/tx-pubkey.ts` — On-chain history check for recipient identity display
 - `public/worklet/decode-processor.js` — AudioWorklet (scales `input[i] * 32768.0`)
 - `app/page.tsx` — Encode/decode tabs with full pipeline
 - 7 UI components: AudioDropzone, EncryptionModeToggle, PasswordInput, WalletRecipient, EncodeProgress, MessageReveal, AudioPlayer
 - Carnation dark theme (DaisyUI, primary #DC143C)
+
+### Smart Contracts (`contracts/`)
+- `CarnationRegistry.sol` — Permissionless pubkey registry (no admin, immutable); maps Ethereum address → compressed secp256k1 pubkey
+  - Deployed addresses: TBD (Base mainnet + Sepolia)
 
 ### Python Prototype (`steganography_cli/engine/`) — READ ONLY
 - `patchwork.py` — Reference implementation (DO NOT MODIFY)
@@ -57,7 +69,9 @@ Next.js 14 static export with:
 - **Encryption**: AES-256-GCM + scrypt (Web Crypto), eciesjs (ECIES/wallet)
 - **Frontend**: Next.js 14 + RainbowKit + Wagmi + Tailwind + DaisyUI
 - **Audio**: ffmpeg.wasm (transcoding), AudioWorklet (real-time decode)
-- **Smart contracts**: Solidity on Ethereum (Sepolia), Foundry/forge
+- **Smart contracts**: Solidity on Base/Ethereum (Sepolia), Foundry/forge
+  - `CarnationRegistry.sol` — permissionless pubkey registry (no admin, immutable)
+  - Deployed addresses: TBD (Base mainnet + Sepolia)
 
 ## Build Commands
 ```bash
@@ -82,8 +96,22 @@ cd frontend && npx vitest run
 - Wallet-mode decryption in decode view
 - IPFS/Arweave storage integration
 
+### Wallet-Mode Encryption (send to Ethereum address)
+| Item | Status |
+|------|--------|
+| Registry contract (`CarnationRegistry.sol`) — code + tests | ✅ done |
+| Registry client (`lib/registry.ts`) | ✅ done |
+| Sender flow (`lib/encrypt-to-address.ts`) — Mode A (ECDH) + Mode B (ephemeral/claim) | ✅ done |
+| Wire format (`VERSION.CLAIM = 0x03`) | ✅ done |
+| Tests (registry, encrypt-to-address, tx-pubkey) | ✅ done |
+| UI components (claim link display, recipient decode, registration prompt) | ⏳ pending |
+| Contract deployment (Base mainnet + Sepolia) | ⏳ pending |
+
 ## Python Environment
 `.venv` with Python 3.14, numpy 2.4.2, scipy 1.17.0, pycryptodome 3.23.0. Tests require ffmpeg for MP3 encoding.
+
+## Key Constants / Environment
+- Wallet key derivation sign message: `CARNATION_DERIVE_MESSAGE`
 
 ## Key Academic References
 - Yeo & Kim, 2003 — Modified Patchwork Algorithm (foundation)
