@@ -151,43 +151,43 @@ https://carnation.radio/#claim&key=<base64url(32-byte AES key)>&for=<checksumAdd
   ```
 
 ### 5. Claim Link Generation + Display (`frontend/`)
-- [ ] After encode completes in Mode B, show a "Claim Link" panel:
+- [x] After encode completes in Mode B, show a "Claim Link" panel:
   - Copy-to-clipboard button for the link
   - Warning: "Share this link with your recipient alongside the audio file. Anyone with this link can decrypt the message."
   - QR code of the claim link (optional but nice, use `qrcode` npm package)
-- [ ] If recipient address was entered as ENS, resolve to checksummed address before embedding
+- [x] If recipient address was entered as ENS, resolve to checksummed address before embedding
 
 ### 6. Recipient Decode Flow — Mode A (registered)
-- [ ] In decode tab, wallet mode:
+- [x] In decode tab, wallet mode:
   - Connect wallet → `signMessageAsync(WALLET_SIGN_MESSAGE)` → derive keypair (existing)
   - Extract sender pubkey from payload (existing 33-byte header)
   - ECDH(recipientDerivedPriv, senderPub) → decrypt (existing)
   - No changes needed to crypto, only to UX framing
 
 ### 7. Recipient Decode Flow — Mode B (claim link)
-- [ ] On page load, check URL fragment for `#claim&key=...&for=...`
+- [x] On page load, check URL fragment for `#claim&key=...&for=...`
   - If present: extract key, store in component state, show "You have a pending message" banner
   - Pre-populate decode tab with the claim key
-- [ ] Add "Have a claim link?" paste input in decode tab
+- [x] Add "Have a claim link?" paste input in decode tab
   - User can paste the full URL, frontend extracts key from fragment
-- [ ] Decrypt logic for VERSION.CLAIM:
+- [x] Decrypt logic for VERSION.CLAIM:
   - Extract AES key from claim link fragment
   - Strip 20-byte recipient address prefix from payload
   - AES-256-GCM decrypt with extracted key
   - No wallet required
 
 ### 8. Optional On-Chain Registration UI
-- [ ] After successful Mode B decrypt, show optional prompt:
+- [x] After successful Mode B decrypt, show optional prompt:
   - "Register your address for direct future messages (no claim link needed)"
   - "This sends one transaction and permanently links your address to Carnation."
   - [Register on Base — ~$0.01 gas] [Skip, keep no trace]
   - Default: dismissed/skipped
-- [ ] After successful Mode A decrypt (wallet connected):
+- [x] After successful Mode A decrypt (wallet connected):
   - Check if they're registered. If not, show same optional prompt
   - If already registered: no prompt
 
 ### 9. Encode Tab UX — Recipient Input
-- [ ] Replace current "Paste recipient's public key (02... or 03...)" input with:
+- [x] Replace current "Paste recipient's public key (02... or 03...)" input with:
   - Address/ENS input field (already partially built in WalletRecipient component)
   - On input: resolve ENS → address → check registry
   - Show status badge:
