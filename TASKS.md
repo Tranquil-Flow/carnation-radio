@@ -221,7 +221,7 @@ https://carnation.radio/#claim&key=<base64url(32-byte AES key)>&for=<checksumAdd
   - Round trip: generate claim link → parse → decrypt
 
 ### 13. CLAUDE.md + PLAN.md Update
-- [ ] Update CLAUDE.md with new lib files, new version bytes, registry address
+- [x] Update CLAUDE.md with new lib files, new version bytes, registry address
 - [ ] Update PLAN.md Phase 2 section to reflect implemented design
 
 ---
