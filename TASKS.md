@@ -122,18 +122,18 @@ https://carnation.radio/#claim&key=<base64url(32-byte AES key)>&for=<checksumAdd
   - Recipient pays gas (minimal, ~30k gas)
 
 ### 3. Transaction Public Key Recovery (`frontend/lib/tx-pubkey.ts`)
-- [ ] `recoverPubkeyFromHistory(address: string): Promise<string | null>`
+- [x] `recoverPubkeyFromHistory(address: string): Promise<string | null>`
   - Queries Alchemy/Infura (via viem) for the most recent outgoing tx from address
   - Uses `viem.recoverPublicKey({ hash: txHash, signature: { r, s, v } })` to get full 65-byte pubkey
   - Compresses to 33-byte form
   - Returns null if address has no tx history (brand new address)
   - Cache result in memory for the session (don't re-query)
-- [ ] This is used ONLY for identity display (ENS name, avatar, address confirmation)
+- [x] This is used ONLY for identity display (ENS name, avatar, address confirmation)
   and for informing the sender "this address exists on-chain"
   NOT used for encryption (encryption uses registry derived pubkey or ephemeral key)
 
 ### 4. Sender Flow Rewrite (`frontend/lib/encrypt-to-address.ts`)
-- [ ] `encryptToAddress(recipientAddress: string, message: Uint8Array, senderPrivHex: string): Promise<{ payload: Uint8Array, claimLink: string | null }>`
+- [x] `encryptToAddress(recipientAddress: string, message: Uint8Array, senderPrivHex: string): Promise<{ payload: Uint8Array, claimLink: string | null }>`
 
   Logic:
   ```
