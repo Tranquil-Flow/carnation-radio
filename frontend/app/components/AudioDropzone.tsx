@@ -5,9 +5,10 @@ import { useCallback, useState } from 'react'
 interface Props {
   onFile: (file: File) => void
   file: File | null
+  testId?: string
 }
 
-export default function AudioDropzone({ onFile, file }: Props) {
+export default function AudioDropzone({ onFile, file, testId }: Props) {
   const [dragOver, setDragOver] = useState(false)
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -37,6 +38,7 @@ export default function AudioDropzone({ onFile, file }: Props) {
         onChange={handleChange}
         className="hidden"
         id="audio-upload"
+        data-testid={testId}
       />
       <label htmlFor="audio-upload" className="cursor-pointer">
         {file ? (
