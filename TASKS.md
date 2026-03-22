@@ -177,12 +177,12 @@ https://carnation.radio/#claim&key=<base64url(32-byte AES key)>&for=<checksumAdd
   - No wallet required
 
 ### 8. Optional On-Chain Registration UI
-- [ ] After successful Mode B decrypt, show optional prompt:
+- [x] After successful Mode B decrypt, show optional prompt:
   - "Register your address for direct future messages (no claim link needed)"
   - "This sends one transaction and permanently links your address to Carnation."
   - [Register on Base — ~$0.01 gas] [Skip, keep no trace]
   - Default: dismissed/skipped
-- [ ] After successful Mode A decrypt (wallet connected):
+- [x] After successful Mode A decrypt (wallet connected):
   - Check if they're registered. If not, show same optional prompt
   - If already registered: no prompt
   - NOTE: registerSelf() exists in frontend/lib/registry.ts but is NOT called from app/page.tsx — wire it up
