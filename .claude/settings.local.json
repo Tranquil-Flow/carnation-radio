@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /Users/evinova/Projects/carnation-radio -name \"*mp3*\" -type f 2>/dev/null | grep -v \".venv\" | grep -v \"target\")",
+      "Bash(which ffmpeg:*)",
+      "Bash(cd /Users/evinova/Projects/carnation-radio/carnation-stego && cargo test --test mp3_survival -- --nocapture 2>&1)",
+      "Bash(cargo test:*)",
+      "Bash(find /Users/evinova/Projects/carnation-radio/frontend -name \"playwright*\" -o -name \"*.e2e.*\" -o -name \"cypress*\" 2>/dev/null | head -20)",
+      "Bash(grep -r \"port\\\\|3000\\\\|5173\" /Users/evinova/Projects/carnation-radio/frontend/ --include=\"*.json\" --include=\"*.mjs\" --include=\"*.ts\" --include=\"*.tsx\" 2>/dev/null | head -20)",
+      "Bash(cd /Users/evinova/Projects/carnation-radio/frontend && npm install 2>&1 | tail -5)",
+      "Bash(npx playwright:*)",
+      "Bash(lsof -ti:3000 2>/dev/null | head -3)",
+      "Bash(CI=1 npx playwright test --grep \"disabled\" --reporter=line 2>&1 | tail -30)",
+      "Bash(curl -sI http://localhost:3001/ 2>/dev/null | grep -i \"cross-origin\" || echo \"No COOP/COEP headers found\")",
+      "Bash(curl -sI http://localhost:3000/ 2>/dev/null | grep -i \"cross-origin\" || echo \"No COOP/COEP headers on port 3000 either\")",
+      "Bash(sleep 8 && curl -sI http://localhost:3001/ | grep -i \"cross-origin\")",
+      "Bash(lsof -ti:3001 2>/dev/null | xargs kill 2>/dev/null)",
+      "Bash(lsof -ti:3001 2>/dev/null | xargs kill 2>/dev/null; sleep 1)",
+      "Bash(npx next:*)",
+      "Bash(lsof -ti:3002 2>/dev/null | xargs kill 2>/dev/null)",
+      "Bash(grep -l \"Cannot find module\" out/_next/static/chunks/*.js 2>/dev/null | head -3)",
+      "Bash(npx vitest:*)",
+      "Bash(npm list:*)",
+      "Bash(node -e \"const p = require\\('/Users/evinova/Projects/carnation-radio/frontend/node_modules/@noble/hashes/package.json'\\); console.log\\(Object.keys\\(p.exports\\).filter\\(k => k.includes\\('util'\\)\\).join\\('\\\\n'\\)\\)\" 2>&1)",
+      "Bash(node -e \"const p = require\\('/Users/evinova/Projects/carnation-radio/frontend/node_modules/@noble/curves/package.json'\\); console.log\\(Object.keys\\(p.exports\\).filter\\(k => k.includes\\('secp'\\)\\).join\\('\\\\n'\\)\\)\" 2>&1)",
+      "Bash(node -e \"\nconst { chromium } = require\\('@playwright/test'\\);\n\\(async \\(\\) => {\n  const browser = await chromium.launch\\(\\);\n  const page = await browser.newPage\\(\\);\n  const errors = [];\n  page.on\\('console', msg => { if \\(msg.type\\(\\) === 'error'\\) errors.push\\(msg.text\\(\\)\\); }\\);\n  page.on\\('pageerror', err => errors.push\\('PAGE ERROR: ' + err.message\\)\\);\n  await page.goto\\('http://localhost:3001', { waitUntil: 'networkidle', timeout: 30000 }\\).catch\\(e => errors.push\\('NAV: ' + e.message\\)\\);\n  await page.waitForTimeout\\(5000\\);\n  for \\(const e of errors\\) console.log\\(e\\);\n  await browser.close\\(\\);\n}\\)\\(\\);\n\" 2>&1)",
+      "Bash(node -e \"\nconst { chromium } = require\\('@playwright/test'\\);\n\\(async \\(\\) => {\n  const browser = await chromium.launch\\(\\);\n  const page = await browser.newPage\\(\\);\n  page.on\\('pageerror', err => console.log\\('PAGE_ERROR:', err.message.substring\\(0, 500\\)\\)\\);\n  page.on\\('console', msg => { if \\(msg.type\\(\\) === 'error'\\) console.log\\('CONSOLE_ERROR:', msg.text\\(\\).substring\\(0, 500\\)\\); }\\);\n  await page.goto\\('http://localhost:3002', { timeout: 30000 }\\);\n  await page.waitForTimeout\\(10000\\);\n  const visible = await page.getByText\\('Carnation Radio'\\).isVisible\\(\\).catch\\(\\(\\) => false\\);\n  console.log\\('Carnation Radio visible:', visible\\);\n  const loading = await page.getByText\\('Loading...'\\).isVisible\\(\\).catch\\(\\(\\) => false\\);\n  console.log\\('Loading... visible:', loading\\);\n  await browser.close\\(\\);\n  process.exit\\(0\\);\n}\\)\\(\\);\n\" 2>&1)",
+      "Bash(lsof -i :3001 -sTCP:LISTEN -P -n)",
+      "Bash(xargs kill:*)",
+      "Bash(lsof -i :3002 -sTCP:LISTEN -P -n)",
+      "Bash(grep -r \"addModule\\\\|createAudioContext\\\\|audioContext\\\\|new Audio\" /Users/evinova/Projects/carnation-radio/frontend --include=\"*.ts\" --include=\"*.tsx\" --include=\"*.js\" --exclude-dir=node_modules 2>/dev/null | head -20)"
+    ]
+  }
+}

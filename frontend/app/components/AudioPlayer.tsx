@@ -1,21 +1,19 @@
 'use client'
 
-import { useRef } from 'react'
+import { forwardRef } from 'react'
 
 interface Props {
   src: string | null
   onPlay?: () => void
 }
 
-export default function AudioPlayer({ src, onPlay }: Props) {
-  const audioRef = useRef<HTMLAudioElement>(null)
-
+const AudioPlayer = forwardRef<HTMLAudioElement, Props>(({ src, onPlay }, ref) => {
   if (!src) return null
 
   return (
     <div className="w-full">
       <audio
-        ref={audioRef}
+        ref={ref}
         src={src}
         controls
         onPlay={onPlay}
@@ -24,4 +22,7 @@ export default function AudioPlayer({ src, onPlay }: Props) {
       />
     </div>
   )
-}
+})
+
+AudioPlayer.displayName = 'AudioPlayer'
+export default AudioPlayer

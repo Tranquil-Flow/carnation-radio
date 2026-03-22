@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { useAccount, useSignMessage } from 'wagmi'
+import { useAccount, useSignMessage, useWalletClient } from 'wagmi'
 import { sha256 } from '@noble/hashes/sha2.js'
 import AudioDropzone from './components/AudioDropzone'
 import EncryptionModeToggle from './components/EncryptionModeToggle'
@@ -22,7 +22,7 @@ import {
   walletDecrypt,
 } from '@/lib/wallet-crypto'
 import { encryptToAddress, parseClaimLink } from '@/lib/encrypt-to-address'
-import { lookupRegistry } from '@/lib/registry'
+import { lookupRegistry, registerSelf } from '@/lib/registry'
 import { detectVersion, isClaimMode, parseClaimPayload } from '@/lib/wire'
 
 type Tab = 'encode' | 'decode'
@@ -35,6 +35,7 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>('encode')
   const { address, isConnected } = useAccount()
   const { signMessageAsync } = useSignMessage()
+  const { data: walletClient } = useWalletClient()
 
   // Encode state
   const [encFile, setEncFile] = useState<File | null>(null)
@@ -70,6 +71,10 @@ export default function Home() {
   const [decMessage, setDecMessage] = useState('')
   const [decError, setDecError] = useState<string | null>(null)
   const [decAudioUrl, setDecAudioUrl] = useState<string | null>(null)
+
+  // Registration prompt state
+  const [registrationStatus, setRegistrationStatus] = useState<'idle' | 'prompting' | 'registering' | 'done' | 'skipped'>('idle')
+  const [registrationError, setRegistrationError] = useState<string | null>(null)
 
   // Cached wallet identity (derived from signature, persists for session)
   const [walletPubKey, setWalletPubKey] = useState<string | null>(null)
@@ -295,6 +300,25 @@ export default function Home() {
 
       setDecMessage(new TextDecoder().decode(plaintext))
       setDecState('revealed')
+      setRegistrationStatus('idle')
+      setRegistrationError(null)
+
+      // Trigger registration prompt
+      if (pendingClaimKey) {
+        // Mode B (claim link): always offer registration (wallet may not be connected)
+        setRegistrationStatus('prompting')
+      } else if (decMode === 'wallet' && address) {
+        // Mode A (wallet): check if already registered
+        try {
+          const registered = await lookupRegistry(address)
+          if (!registered) {
+            setRegistrationStatus('prompting')
+          }
+          // else: already registered, no prompt
+        } catch {
+          // Registry check failed, silently skip prompt
+        }
+      }
     } catch (err: any) {
       if (err?.code === 4001 || err?.message?.includes('User rejected')) {
         setDecState('idle')
@@ -381,6 +405,23 @@ export default function Home() {
       setDecError(err?.message || 'Live decode failed')
       setDecState('idle')
       setLiveDecoding(false)
+    }
+  }
+
+  async function handleRegister() {
+    if (!walletClient || !walletPubKey) return
+    setRegistrationStatus('registering')
+    setRegistrationError(null)
+    try {
+      await registerSelf(walletClient, walletPubKey)
+      setRegistrationStatus('done')
+    } catch (err: any) {
+      if (err?.code === 4001 || err?.message?.includes('User rejected')) {
+        setRegistrationStatus('prompting')
+        return
+      }
+      setRegistrationError(err?.message || 'Registration failed')
+      setRegistrationStatus('prompting')
     }
   }
 
@@ -817,6 +858,80 @@ export default function Home() {
             )}
 
             <MessageReveal state={decState} message={decMessage} />
+
+            {/* Registration prompt — shown after successful decode */}
+            {decState === 'revealed' && registrationStatus === 'prompting' && (
+              <div className="p-4 bg-surface-card border border-gray-600 rounded-lg space-y-3" data-testid="registration-prompt">
+                <h3 className="text-sm font-semibold text-gray-200">📡 Register for direct messages</h3>
+                <p className="text-sm text-gray-400">
+                  Register your address for direct future messages (no claim link needed).
+                </p>
+                <p className="text-xs text-gray-500">
+                  This sends one transaction and permanently links your address to Carnation.
+                </p>
+
+                {/* If wallet not connected or no pubkey, prompt to connect/sign first */}
+                {(!isConnected || !walletPubKey) ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-amber-400">
+                      {!isConnected
+                        ? 'Connect your wallet to register.'
+                        : 'Sign to derive your Carnation ID first.'}
+                    </p>
+                    {!isConnected ? (
+                      <ConnectButton />
+                    ) : (
+                      <button
+                        onClick={handleGetId}
+                        className="btn btn-sm btn-outline btn-info w-full"
+                      >
+                        Get My Carnation ID
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setRegistrationStatus('skipped')}
+                      className="btn btn-sm btn-ghost text-gray-500 w-full"
+                    >
+                      Skip, keep no trace
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleRegister}
+                      className="btn btn-sm btn-primary flex-1"
+                      data-testid="btn-register"
+                    >
+                      Register on Base — ~$0.01 gas
+                    </button>
+                    <button
+                      onClick={() => setRegistrationStatus('skipped')}
+                      className="btn btn-sm btn-ghost text-gray-500 flex-1"
+                      data-testid="btn-skip-register"
+                    >
+                      Skip, keep no trace
+                    </button>
+                  </div>
+                )}
+
+                {registrationError && (
+                  <p className="text-xs text-error">{registrationError}</p>
+                )}
+              </div>
+            )}
+
+            {decState === 'revealed' && registrationStatus === 'registering' && (
+              <div className="p-4 bg-surface-card border border-gray-600 rounded-lg flex items-center gap-3" data-testid="registration-registering">
+                <span className="loading loading-spinner loading-sm text-carnation" />
+                <p className="text-sm text-gray-400">Sending registration transaction…</p>
+              </div>
+            )}
+
+            {decState === 'revealed' && registrationStatus === 'done' && (
+              <div className="p-4 bg-surface-card border border-green-600/50 rounded-lg" data-testid="registration-done">
+                <p className="text-sm text-green-400">✓ Registered! Senders can now find you directly on-chain.</p>
+              </div>
+            )}
           </div>
         )}
       </div>
