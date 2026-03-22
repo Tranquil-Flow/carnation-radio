@@ -8,6 +8,11 @@ async function loadFFmpeg(): Promise<FFmpeg> {
   ffmpeg = new FFmpeg()
   const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm'
   await ffmpeg.load({
+    // Use standalone worker script to bypass webpack's import() interception.
+    // Webpack replaces dynamic import() inside bundled workers with a dummy module
+    // that always throws "Cannot find module". Our public/ffmpeg-worker.js runs
+    // outside webpack's scope and uses native browser import() for blob URLs.
+    classWorkerURL: await toBlobURL('/ffmpeg-worker.js', 'text/javascript'),
     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
   })
@@ -31,7 +36,7 @@ export async function toMp3(samples: Float64Array, sampleRate = 44100): Promise<
   for (let i = 0; i < samples.length; i++)
     int16[i] = Math.max(-32768, Math.min(32767, Math.round(samples[i])))
   await ff.writeFile('input.raw', new Uint8Array(int16.buffer))
-  await ff.exec(['-f', 's16le', '-ar', String(sampleRate), '-ac', '1', '-i', 'input.raw', '-b:a', '192k', '-y', 'output.mp3'])
+  await ff.exec(['-f', 's16le', '-ar', String(sampleRate), '-ac', '1', '-i', 'input.raw', '-b:a', '320k', '-y', 'output.mp3'])
   const data = await ff.readFile('output.mp3')
   return new Blob([data], { type: 'audio/mpeg' })
 }

@@ -20,7 +20,7 @@ export default function MessageReveal({ state, message }: Props) {
         <div className="card bg-surface-card border border-carnation/30 animate-[fadeIn_0.5s_ease-in]">
           <div className="card-body">
             <h3 className="card-title text-carnation text-sm">Decoded Message</h3>
-            <p className="text-white whitespace-pre-wrap">{message}</p>
+            <p className="text-white whitespace-pre-wrap" data-testid="decoded-message">{message}</p>
           </div>
         </div>
       )}
