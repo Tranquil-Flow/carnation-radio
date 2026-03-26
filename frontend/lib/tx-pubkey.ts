@@ -1,5 +1,5 @@
 import { createPublicClient, http } from 'viem'
-import { mainnet, base } from 'viem/chains'
+import { mainnet, sepolia } from 'viem/chains'
 
 const _cache = new Map<string, boolean>()
 
@@ -15,7 +15,7 @@ export async function hasOnChainHistory(address: string): Promise<boolean> {
   const normalized = address.toLowerCase()
   if (_cache.has(normalized)) return _cache.get(normalized)!
 
-  const chains = [mainnet, base]
+  const chains = [mainnet, sepolia]
 
   for (const chain of chains) {
     try {

@@ -109,14 +109,16 @@ https://carnation.radio/#claim&key=<base64url(32-byte AES key)>&for=<checksumAdd
   - register + lookup round trip
   - overwrite (re-register with new key)
   - lookup unregistered address returns empty
-- [ ] Deploy to Base (low gas, good UX) and Sepolia testnet
-- [ ] Record deployed addresses in `frontend/lib/registry.ts`
+- [x] Deploy to Sepolia testnet — 0x80634dE8ddb230dA28241f0656f4c127A4c7566F (deployed + verified 2026-03-27)
+- [ ] Deploy to Ethereum mainnet (future decision — NOT Base)
+- [x] Record Sepolia deployed address in `frontend/lib/registry.ts`
+- [ ] Record Ethereum mainnet address in `frontend/lib/registry.ts`  <!-- depends on mainnet deploy -->
 
 ### 2. Registry Client (`frontend/lib/registry.ts`)
 - [x] `lookupRegistry(address: string): Promise<string | null>`
   - Uses viem publicClient to call `lookup(address)` on CarnationRegistry
   - Returns compressed pubkey hex (66 chars) or null if not registered
-  - Tries Base mainnet first, falls back to Sepolia for testing
+  - Tries Ethereum mainnet first (if deployed), falls back to Sepolia for testing
 - [x] `registerSelf(walletClient: WalletClient, derivedPubkeyHex: string): Promise<Hash>`
   - Calls `register(compressedPubkey)` — sends an on-chain tx
   - Recipient pays gas (minimal, ~30k gas)
@@ -180,7 +182,7 @@ https://carnation.radio/#claim&key=<base64url(32-byte AES key)>&for=<checksumAdd
 - [x] After successful Mode B decrypt, show optional prompt:
   - "Register your address for direct future messages (no claim link needed)"
   - "This sends one transaction and permanently links your address to Carnation."
-  - [Register on Base — ~$0.01 gas] [Skip, keep no trace]
+  - [Register on Ethereum — gas varies] [Skip, keep no trace]
   - Default: dismissed/skipped
 - [x] After successful Mode A decrypt (wallet connected):
   - Check if they're registered. If not, show same optional prompt
@@ -242,7 +244,7 @@ for potential future use or removed at cleanup time.
 ## Notes for Agent
 
 - Registry contract must be minimal and immutable. No proxy, no owner, no pause. It is a public good.
-- Deploy to Base for mainnet (low gas, widely used). Sepolia for testnet.
+- Deploy to Ethereum mainnet when ready (future decision). Sepolia for testnet.
 - The claim link key lives ONLY in the URL fragment (#). It is never sent to any server.
   Test this explicitly — `window.location.hash` not `window.location.search`.
 - VERSION.CLAIM payloads are NOT encrypted to any public key. Anyone with the AES key can decrypt.
