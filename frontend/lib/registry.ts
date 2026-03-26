@@ -1,10 +1,10 @@
 import { createPublicClient, http, type WalletClient, type Hash } from 'viem'
-import { base, sepolia } from 'viem/chains'
+import { mainnet, sepolia } from 'viem/chains'
 
-// Placeholder addresses — will be filled after deployment
+// Deployed contract addresses
 const REGISTRY_ADDRESSES: Record<number, `0x${string}`> = {
-  [base.id]: '0x0000000000000000000000000000000000000000',     // Base mainnet — TBD
-  [sepolia.id]: '0x0000000000000000000000000000000000000000',  // Sepolia testnet — TBD
+  [mainnet.id]: '0x0000000000000000000000000000000000000000',     // Ethereum mainnet — TBD
+  [sepolia.id]: '0x80634dE8ddb230dA28241f0656f4c127A4c7566F',  // Sepolia testnet — deployed 2026-03-27
 }
 
 const REGISTRY_ABI = [
@@ -37,14 +37,14 @@ const _cache = new Map<string, string | null>()
 
 /**
  * Look up a Carnation-derived pubkey from the on-chain registry.
- * Tries Base mainnet first, falls back to Sepolia for testing.
+ * Tries Ethereum mainnet first (if deployed), falls back to Sepolia for testing.
  * Returns compressed pubkey hex (66 chars with 0x prefix) or null if not registered.
  */
 export async function lookupRegistry(address: string): Promise<string | null> {
   const normalizedAddr = address.toLowerCase()
   if (_cache.has(normalizedAddr)) return _cache.get(normalizedAddr)!
 
-  const chains = [base, sepolia]
+  const chains = [mainnet, sepolia]
 
   for (const chain of chains) {
     const registryAddr = REGISTRY_ADDRESSES[chain.id]
@@ -77,7 +77,7 @@ export async function lookupRegistry(address: string): Promise<string | null> {
 /**
  * Register the caller's Carnation-derived pubkey on-chain.
  * Sends a transaction to the CarnationRegistry contract.
- * Recipient pays gas (minimal, ~30k gas on Base).
+ * Recipient pays gas (minimal, ~30k gas).
  */
 export async function registerSelf(
   walletClient: WalletClient,

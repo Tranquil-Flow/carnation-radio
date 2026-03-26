@@ -94,18 +94,19 @@ frontend/app/decode/page.tsx          # Claim link input field, URL fragment aut
 
 ### Deployment
 
-- [ ] **Deploy CarnationRegistry.sol to Base Sepolia** — `forge script` + verify on Basescan.
-- [ ] **Deploy CarnationRegistry.sol to Base mainnet** — same, after Sepolia validation.
-- [ ] **Record deployed addresses in registry.ts** — update `REGISTRY_ADDRESS` constants for both chains.
+- [x] **Deploy CarnationRegistry.sol to Sepolia** — deployed at 0x80634dE8ddb230dA28241f0656f4c127A4c7566F (2026-03-27, verified on Etherscan).
+- [ ] **Deploy CarnationRegistry.sol to Ethereum mainnet** — future decision, after Sepolia validation.
+- [x] **Record Sepolia address in registry.ts** — done.
+- [ ] **Record Ethereum mainnet address in registry.ts** — pending mainnet deploy.
 - [ ] **Update this document** — mark deployment steps complete, add deployed addresses.
 
 ---
 
 ## Deployed Addresses
 
-| Network       | Address | Block |
-|---------------|---------|-------|
-| Base Sepolia  | —       | —     |
-| Base mainnet  | —       | —     |
+| Network           | Address                                    | Block |
+|-------------------|--------------------------------------------|-------|
+| Sepolia           | 0x80634dE8ddb230dA28241f0656f4c127A4c7566F | verified 2026-03-27 |
+| Ethereum mainnet  | —                                          | —     |
 
-*(Populated after deployment)*
+*(Mainnet deployment is a future decision — NOT Base)*

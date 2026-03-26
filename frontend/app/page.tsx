@@ -902,7 +902,7 @@ export default function Home() {
                       className="btn btn-sm btn-primary flex-1"
                       data-testid="btn-register"
                     >
-                      Register on Base — ~$0.01 gas
+                      Register on Ethereum — ~$2–5 gas
                     </button>
                     <button
                       onClick={() => setRegistrationStatus('skipped')}

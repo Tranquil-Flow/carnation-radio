@@ -19,8 +19,8 @@ import {CarnationRegistry} from "../src/CarnationRegistry.sol";
 ///     -vvvv
 ///
 /// Recommended RPC vars:
-///   Base mainnet:  RPC_URL=https://mainnet.base.org
-///   Sepolia:       RPC_URL=https://rpc.sepolia.org
+///   Ethereum mainnet:  RPC_URL=https://eth.llamarpc.com  (or any Ethereum mainnet RPC)
+///   Sepolia:           RPC_URL=https://rpc.sepolia.org
 ///
 /// After deployment, copy the logged address into frontend/lib/registry.ts.
 contract DeployCarnationRegistry is Script {
