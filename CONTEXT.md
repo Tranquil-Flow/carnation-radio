@@ -52,7 +52,7 @@ Next.js 14 static export with:
 
 ### Smart Contracts (`contracts/`)
 - `CarnationRegistry.sol` — Permissionless pubkey registry (no admin, immutable); maps Ethereum address → compressed secp256k1 pubkey
-  - Deployed addresses: TBD (Base mainnet + Sepolia)
+  - Deployed addresses: Sepolia: 0x80634dE8ddb230dA28241f0656f4c127A4c7566F (deployed + verified 2026-03-27); Ethereum mainnet: TBD
 
 ### Python Prototype (`steganography_cli/engine/`) — READ ONLY
 - `patchwork.py` — Reference implementation (DO NOT MODIFY)
@@ -69,9 +69,9 @@ Next.js 14 static export with:
 - **Encryption**: AES-256-GCM + scrypt (Web Crypto), eciesjs (ECIES/wallet)
 - **Frontend**: Next.js 14 + RainbowKit + Wagmi + Tailwind + DaisyUI
 - **Audio**: ffmpeg.wasm (transcoding), AudioWorklet (real-time decode)
-- **Smart contracts**: Solidity on Base/Ethereum (Sepolia), Foundry/forge
+- **Smart contracts**: Solidity on Ethereum mainnet + Sepolia, Foundry/forge
   - `CarnationRegistry.sol` — permissionless pubkey registry (no admin, immutable)
-  - Deployed addresses: TBD (Base mainnet + Sepolia)
+  - Deployed addresses: Sepolia: 0x80634dE8ddb230dA28241f0656f4c127A4c7566F (deployed + verified 2026-03-27); Ethereum mainnet: TBD
 
 ## Build Commands
 ```bash
@@ -105,7 +105,7 @@ cd frontend && npx vitest run
 | Wire format (`VERSION.CLAIM = 0x03`) | ✅ done |
 | Tests (registry, encrypt-to-address, tx-pubkey) | ✅ done |
 | UI components (claim link display, recipient decode, registration prompt) | ⏳ pending |
-| Contract deployment (Base mainnet + Sepolia) | ⏳ pending |
+| Contract deployment (Ethereum mainnet — future decision) | ⏳ pending |
 
 ## Python Environment
 `.venv` with Python 3.14, numpy 2.4.2, scipy 1.17.0, pycryptodome 3.23.0. Tests require ffmpeg for MP3 encoding.
@@ -118,3 +118,4 @@ cd frontend && npx vitest run
 - Natgunanathan et al. 2012 — Formal patchwork improvement, buffer compensation
 - IDEAW (Li et al. 2024) — Invertible dual-embedding neural watermarking (Phase 2)
 - XAttnMark (Liu et al., ICML 2025) — Cross-attention watermarking (Phase 2)
+
