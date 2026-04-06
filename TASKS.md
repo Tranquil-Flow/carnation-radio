@@ -252,3 +252,108 @@ for potential future use or removed at cleanup time.
 - Do not modify the Python prototype or Rust stego engine. Crypto changes are TypeScript-only.
 - Run `npm run build` after changes to verify static export still works.
 - Run `npx vitest run` for all tests before committing.
+
+---
+
+# Milestone: Phase 3 — Mainnet Readiness Testing
+
+## Goal
+Harden the test suite so every crypto primitive, wire format path, and registry
+integration is covered before considering a mainnet deployment. This phase adds
+missing unit tests, verifies Foundry and Rust tests pass cleanly, and adds
+infrastructure for test isolation.
+
+## Tasks
+
+### wallet-crypto.test.ts — Derive / Encrypt / Decrypt Unit Tests
+- [x] Create `frontend/lib/__tests__/wallet-crypto.test.ts`
+- [x] Test `walletEncrypt(message, derivedPrivHex)`:
+      - Encrypts to a non-empty Uint8Array
+      - Output is parseable by `walletDecrypt` (round-trip)
+- [x] Test `walletDecrypt(ciphertext, derivedPrivHex)`:
+      - Decrypts to exact original plaintext bytes
+      - Throws (or returns null) on wrong key (auth tag failure)
+      - Throws (or returns null) on truncated ciphertext
+- [x] Test `CARNATION_DERIVE_MESSAGE` constant:
+      - Is a non-empty string
+      - Has not changed from its expected value (regression guard)
+- [x] Confirm all new tests pass with `npx vitest run lib/__tests__/wallet-crypto.test.ts`
+      (11 tests, all passing)
+
+### tx-pubkey.test.ts — On-Chain History + Pubkey Recovery Tests
+- [x] Create `frontend/lib/__tests__/tx-pubkey.test.ts`
+- [x] Test `hasOnChainHistory(address)`:
+      - Mock viem `getTransactionCount` returning 0 → returns false
+      - Mock viem `getTransactionCount` returning 5 → returns true
+      - Mock viem throwing network error → returns false gracefully (no throw)
+- [x] Test session cache: calling twice with same address only queries viem once
+      (mock call count assertion)
+- [x] Confirm all new tests pass with `npx vitest run lib/__tests__/tx-pubkey.test.ts`
+      (4 tests, all passing)
+
+### wire.test.ts — Expand CLAIM + WALLET Version Byte Coverage
+- [x] Expanded `frontend/lib/__tests__/wire.test.ts` with 9 new tests (11 total):
+      - detectVersion(0x03) → VERSION.CLAIM
+      - detectVersion(0x02) → VERSION.WALLET_REPETITION
+      - detectVersion(empty) → throws 'Empty payload'
+      - detectVersion(0x11) → VERSION.PASSWORD_BCH
+      - detectVersion(0x12) → VERSION.WALLET_BCH
+      - parseClaimPayload with valid CLAIM payload — EIP-55 address, 12-byte nonce, ciphertext
+      - parseClaimPayload with payload too short → throws with clear error
+- [x] Confirm all new tests pass with `npx vitest run` (43 tests, all passing)
+
+### Foundry Test Verification
+- [ ] Run `forge test` in `frontend/forge/` (or wherever `CarnationRegistry.sol` tests live)
+- [ ] Confirm all 8 expected test cases pass:
+      1. `test_register_and_lookup` — register pubkey, lookup returns it
+      2. `test_lookup_unregistered` — lookup unknown address returns empty bytes
+      3. `test_overwrite_registration` — re-register with new key, lookup returns new key
+      4. `test_register_emits_event` — Registered event emitted with correct args
+      5. `test_register_empty_pubkey` — registering empty bytes is allowed (or reverts — document)
+      6. `test_lookup_zero_address` — lookup(address(0)) returns empty (not revert)
+      7. `test_anyone_can_register` — any EOA can call register (no access control)
+      8. `test_gas_cost` — single register tx costs <= 50,000 gas (regression guard)
+- [ ] If any test fails: fix the test or the contract and document what changed
+- [ ] Record forge test output summary in CONTEXT.md
+
+### Rust Engine Test Verification (carnation-stego/)
+- [ ] Run `cargo test` in `carnation-stego/`
+- [ ] Confirm all tests pass including:
+      - PRNG compatibility tests against Python numpy vectors
+      - DCT compatibility tests against scipy vectors
+      - Round-trip: encode then decode recovers original message
+      - Round-trip with wrong key: decode returns error (not garbage plaintext)
+      - Long message test: message at 80% capacity encodes and decodes correctly
+      - Capacity overflow test: message exceeding capacity returns error at encode time
+      - Cross-compat: Rust can decode a reference ciphertext encoded by Python engine
+- [ ] If `cargo test` shows any failures: investigate and fix; document root cause
+- [ ] Run `cargo clippy -- -D warnings` and fix any clippy errors (keep Rust clean)
+- [ ] Record `cargo test` summary output in CONTEXT.md
+
+### Registry Cache Isolation for Tests
+- [x] Audit `frontend/lib/registry.ts` — confirmed module-level `_cache = new Map()`
+- [x] Export a `clearRegistryCache()` function
+      that resets the cache map to empty
+- [x] Update `frontend/lib/__tests__/registry.test.ts` to call `clearRegistryCache()`
+      in `beforeEach` — prevents test pollution
+- [x] Audit `frontend/lib/tx-pubkey.ts` session cache and add `clearHistoryCache()` export
+- [x] Add `clearHistoryCache()` call in `beforeEach` of `tx-pubkey.test.ts`
+- [x] Verify tests still pass after adding cache clearing — 43 tests, all passing
+
+### ENS Resolution Integration Test
+- [ ] Create `frontend/lib/__tests__/ens-integration.test.ts`
+- [ ] These tests require a live RPC (use a public mainnet endpoint or Alchemy test key)
+      — mark the test file with `@integration` tag and skip in CI if no key available
+- [ ] Test `resolveEnsToAddress('vitalik.eth')`:
+      - Returns `0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045` (Vitalik's well-known address)
+      - Is checksummed EIP-55 format
+- [ ] Test `resolveEnsToAddress('carnation.eth')` (if registered) or another
+      known ENS name — verify returns a valid 0x address
+- [ ] Test `resolveEnsToAddress('doesnotexist12345678.eth')`:
+      - Returns null (not throws)
+- [ ] Test `resolveEnsToAddress('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')`:
+      - Passthrough: returns the address unchanged (no ENS lookup needed for hex addrs)
+- [ ] Test that the resolved address is immediately usable as `encryptToAddress()`
+      recipient (integration bridge: ENS → encrypt → claim link generated or Mode A found)
+- [ ] Document in CONTEXT.md: how to run integration tests with `VITE_ALCHEMY_KEY=...
+      npx vitest run --reporter=verbose lib/__tests__/ens-integration.test.ts`
