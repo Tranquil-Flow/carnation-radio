@@ -3,6 +3,10 @@ import { mainnet, sepolia } from 'viem/chains'
 
 const _cache = new Map<string, boolean>()
 
+export function clearHistoryCache(): void {
+  _cache.clear()
+}
+
 /**
  * Check if an address has on-chain transaction history.
  * Used for identity display — informing the sender whether
