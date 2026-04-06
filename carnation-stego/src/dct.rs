@@ -1,5 +1,5 @@
 use std::f64::consts::PI;
-use rustfft::{FftPlanner, num_complex::Complex};
+use rustfft::{num_complex::Complex, FftPlanner};
 
 /// DCT-II with orthonormal normalization (matches scipy.fft.dct(type=2, norm="ortho")).
 /// Uses FFT-based algorithm: O(N log N).
@@ -11,7 +11,7 @@ pub fn dct_ii(input: &[f64]) -> Vec<f64> {
 
     // Reorder: y[k] = x[2k] for k < ceil(N/2), y[N-1-k] = x[2k+1] for k < N/2
     let mut y = vec![Complex::new(0.0, 0.0); n];
-    for k in 0..(n + 1) / 2 {
+    for k in 0..n.div_ceil(2) {
         y[k] = Complex::new(input[2 * k], 0.0);
     }
     for k in 0..n / 2 {
@@ -69,12 +69,12 @@ pub fn idct_ii(coeffs: &[f64]) -> Vec<f64> {
 
     // rustfft inverse doesn't normalize, so divide by N
     for val in y.iter_mut() {
-        *val = *val / nf;
+        *val /= nf;
     }
 
     // Reverse the reordering: reconstruct x from the reordered sequence
     let mut result = vec![0.0f64; n];
-    for k in 0..(n + 1) / 2 {
+    for k in 0..n.div_ceil(2) {
         result[2 * k] = y[k].re;
     }
     for k in 0..n / 2 {
