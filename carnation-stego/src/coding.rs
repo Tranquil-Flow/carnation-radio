@@ -21,10 +21,10 @@ pub fn deinterleave_vote(raw_bits: &[u8], repetition: usize) -> Vec<u8> {
     let mut votes: Vec<Vec<u8>> = vec![Vec::new(); stride];
     for rep_i in 0..repetition {
         let offset = rep_i * stride;
-        for bit_i in 0..stride {
+        for (bit_i, vote) in votes.iter_mut().enumerate().take(stride) {
             let slot_idx = offset + bit_i;
             if slot_idx < total {
-                votes[bit_i].push(raw_bits[slot_idx]);
+                vote.push(raw_bits[slot_idx]);
             }
         }
     }

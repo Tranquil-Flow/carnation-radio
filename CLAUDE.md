@@ -84,7 +84,32 @@ cd frontend && npm run build
 # Tests
 cd carnation-stego && cargo test
 cd frontend && npx vitest run
+cd forge && forge test --summary
 ```
+
+## Test Status (last verified 2026-04-07)
+
+### Rust Engine (`cargo test` — Rust 1.94.1)
+- `src/lib.rs` unit tests: 12 passed
+- `tests/dct_compat.rs`: 1 passed (DCT-II matches scipy ortho)
+- `tests/patchwork_pipeline.rs`: 3 passed
+- `tests/carnation_pipeline.rs`: 7 passed (MP3/OGG survival at 128k–320k)
+- `tests/mp3_survival.rs`: 7 passed (roundtrip + BER threshold)
+- `tests/prng_compat.rs`: 1 passed (MT19937 matches numpy)
+- `tests/round_trip.rs`: 4 passed (encode/decode, wrong key, long, overflow)
+- **Total: 35 passed, 0 failed**
+- `cargo clippy -- -D warnings`: clean (4 errors fixed 2026-04-07)
+
+### Smart Contracts (`forge test` — Foundry 1.5.1-stable)
+- `CarnationRegistryTest`: 8 passed (lookup, overwrite, event, prefix validation)
+- `CounterTest`: 2 passed
+- **Total: 10 passed, 0 failed**
+- RegisterAndLookup gas: 93,999 (first SSTORE + event emit)
+
+### Frontend (`npx vitest run` — vitest 4.1.0)
+- `crypto.test.ts`, `wire.test.ts`, `e2e.test.ts`, `registry.test.ts`
+- `tx-pubkey.test.ts`, `claim-link.test.ts`, `encrypt-to-address.test.ts`, `wallet-crypto.test.ts`
+- **Total: 43 passed, 0 failed**
 
 ## Design Documents
 - `docs/superpowers/specs/2026-03-13-phase1-mvp-design.md` — Full design spec
