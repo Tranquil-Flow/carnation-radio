@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-
 // We test the module's exported functions by mocking viem
 vi.mock('viem', async () => {
   const actual = await vi.importActual('viem')
@@ -9,7 +8,7 @@ vi.mock('viem', async () => {
   }
 })
 
-import { lookupRegistry } from '../registry'
+import { lookupRegistry, clearRegistryCache } from '../registry'
 import { createPublicClient } from 'viem'
 
 const mockedCreatePublicClient = vi.mocked(createPublicClient)
@@ -18,6 +17,7 @@ describe('lookupRegistry', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     // Clear the module-level cache between tests
+    clearRegistryCache()
   })
 
   it('returns null for unregistered address (queries deployed chains only)', async () => {
