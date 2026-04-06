@@ -35,6 +35,10 @@ const REGISTRY_ABI = [
 // Session cache
 const _cache = new Map<string, string | null>()
 
+export function clearRegistryCache(): void {
+  _cache.clear()
+}
+
 /**
  * Look up a Carnation-derived pubkey from the on-chain registry.
  * Tries Ethereum mainnet first (if deployed), falls back to Sepolia for testing.
