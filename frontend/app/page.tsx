@@ -12,8 +12,8 @@ import MessageReveal from './components/MessageReveal'
 import AudioPlayer from './components/AudioPlayer'
 import { encryptMessage, decryptMessage } from '@/lib/crypto'
 import { formatEncodeError } from '@/lib/errors'
-import { stegoEncode, stegoDecode } from '@/lib/stego'
-import { toWav, toMp3 } from '@/lib/transcode'
+import { createFrameDecoder, stegoEncode, stegoDecode } from '@/lib/stego'
+import { toWav, toWavBlob } from '@/lib/transcode'
 import { maxMessageBytes, minDurationSeconds, getAudioDuration } from '@/lib/capacity'
 import {
   CARNATION_DERIVE_MESSAGE,
@@ -86,6 +86,7 @@ export default function Home() {
   const audioCtxRef = useRef<AudioContext | null>(null)
   const [liveDecoding, setLiveDecoding] = useState(false)
   const [liveProgress, setLiveProgress] = useState(0)
+  const [liveReady, setLiveReady] = useState(false)
 
   // Clear cached wallet identity when account changes
   useEffect(() => {
@@ -232,10 +233,10 @@ export default function Home() {
       )
 
       setEncStage('compressing')
-      const mp3Blob = await toMp3(new Float64Array(encoded))
+      const wavBlob = await toWavBlob(new Float64Array(encoded))
 
       setEncStage('done')
-      setDownloadUrl(URL.createObjectURL(mp3Blob))
+      setDownloadUrl(URL.createObjectURL(wavBlob))
     } catch (err: any) {
       if (err?.code === 4001 || err?.message?.includes('User rejected')) {
         setEncStage('idle')
@@ -332,10 +333,16 @@ export default function Home() {
 
   async function handleLiveDecode() {
     if (!audioRef.current) return
-    // Skip if worklet is already connected
-    if (audioCtxRef.current) return
+    // If the graph is already connected, a later play event can still resume a suspended context.
+    if (audioCtxRef.current) {
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => {})
+      }
+      return
+    }
 
     setDecError(null)
+    setLiveReady(false)
     setDecState('listening')
 
     try {
@@ -358,42 +365,160 @@ export default function Home() {
       const ctx = new AudioContext({ sampleRate: 44100 })
       audioCtxRef.current = ctx
 
+      // AudioWorklets cannot dynamically import wasm-pack ESM glue. Keep WASM decoding
+      // on the main thread and use the worklet only to stream PCM frames from playback.
+      const frameDecoder = await createFrameDecoder(embedKey, totalFrames)
+      const collectedFrames: Float64Array[] = []
+      let decoded = false
+
+      const revealPayload = async (rawPayload: Uint8Array) => {
+        const { data } = detectVersion(rawPayload)
+        let plaintext: Uint8Array
+        if (decMode === 'wallet' && walletPrivHex) {
+          plaintext = await walletDecrypt(walletPrivHex, data)
+        } else {
+          plaintext = await decryptMessage(data, decPass)
+        }
+        setDecMessage(new TextDecoder().decode(plaintext))
+        setDecState('revealed')
+        setLiveDecoding(false)
+      }
+
+      const decodeBrowserAudioBuffer = async () => {
+        if (!decAudioUrl) throw new Error('No audio source available')
+        const response = await fetch(decAudioUrl)
+        const arrayBuffer = await response.arrayBuffer()
+        const decodeCtx = new AudioContext({ sampleRate: 44100 })
+        try {
+          const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer)
+          const channel = audioBuffer.getChannelData(0)
+          const samples = new Float64Array(channel.length)
+          for (let i = 0; i < channel.length; i++) {
+            samples[i] = channel[i] * 32768.0
+          }
+          return stegoDecode(samples, embedKey)
+        } finally {
+          decodeCtx.close().catch(() => {})
+        }
+      }
+
+      const decodeCollectedPlayback = async () => {
+        if (decoded || collectedFrames.length === 0) return
+        let lastError: any = null
+        try {
+          const totalSamples = collectedFrames.reduce((sum, frame) => sum + frame.length, 0)
+          const playbackSamples = new Float64Array(totalSamples)
+          let offset = 0
+          for (const frame of collectedFrames) {
+            playbackSamples.set(frame, offset)
+            offset += frame.length
+          }
+
+          // MediaElement playback can prepend a few silent render quanta before media starts.
+          // Try bounded likely alignments before falling back to browser-native decodeAudioData.
+          let firstSignal = 0
+          while (firstSignal < playbackSamples.length && Math.abs(playbackSamples[firstSignal]) < 1) {
+            firstSignal++
+          }
+          const commonMp3Delays = [0, 529, 576, 1024, 1056, 1105, 1152, 1728, 2048]
+          const coarseFrameOffsets = Array.from({ length: 17 }, (_, i) => i * 64)
+          const candidateOffsets = Array.from(new Set([
+            ...commonMp3Delays,
+            ...coarseFrameOffsets,
+            firstSignal,
+            firstSignal % 1024,
+            ...commonMp3Delays.map(delay => firstSignal + delay),
+            ...commonMp3Delays.map(delay => Math.max(0, firstSignal - delay)),
+          ])).filter(offset => offset >= 0 && offset < playbackSamples.length)
+          for (const candidateOffset of candidateOffsets) {
+            if (candidateOffset >= playbackSamples.length) continue
+            try {
+              const rawPayload = await stegoDecode(playbackSamples.subarray(candidateOffset), embedKey)
+              await revealPayload(rawPayload)
+              decoded = true
+              return
+            } catch (err) {
+              lastError = err
+            }
+          }
+          try {
+            const rawPayload = await decodeBrowserAudioBuffer()
+            await revealPayload(rawPayload)
+            decoded = true
+            return
+          } catch (err) {
+            lastError = err
+          }
+
+          throw lastError || new Error('Live decode failed')
+        } catch (err: any) {
+          const raw = err?.message || 'Decryption failed'
+          const { message } = formatEncodeError(raw)
+          setDecError(message)
+          setDecState('idle')
+          setLiveDecoding(false)
+        }
+      }
+
       await ctx.audioWorklet.addModule('/worklet/decode-processor.js')
       const workletNode = new AudioWorkletNode(ctx, 'decode-processor')
+
+      workletNode.onprocessorerror = () => {
+        setDecError('Live decoder crashed')
+        setDecState('idle')
+        setLiveDecoding(false)
+      }
+
+      workletNode.port.onmessage = async (event: MessageEvent) => {
+        if (event.data.type === 'ready') {
+          setLiveReady(true)
+          return
+        }
+
+        if (event.data.type === 'error') {
+          setDecError(event.data.message || 'Live decode failed')
+          setDecState('idle')
+          setLiveDecoding(false)
+          return
+        }
+
+        if (event.data.type !== 'frame' || decoded) return
+
+        const samples = event.data.samples instanceof Float64Array
+          ? event.data.samples
+          : new Float64Array(event.data.samples)
+        collectedFrames.push(samples)
+
+        const rawPayload = frameDecoder.feed_frame(samples)
+        setLiveProgress(Math.min(frameDecoder.progress(), 1))
+
+        if (!rawPayload) return
+        decoded = true
+
+        try {
+          await revealPayload(rawPayload)
+        } catch (err: any) {
+          const raw = err?.message || 'Decryption failed'
+          const { message } = formatEncodeError(raw)
+          setDecError(message)
+          setDecState('idle')
+          setLiveDecoding(false)
+        }
+      }
+
       const source = ctx.createMediaElementSource(audioRef.current)
       source.connect(workletNode)
       workletNode.connect(ctx.destination)
 
-      workletNode.port.postMessage({
-        type: 'init',
-        key: Array.from(embedKey),
-        totalFrames,
-        wasmUrl: '/wasm/carnation_stego.js',
-      })
+      audioRef.current.addEventListener('ended', () => {
+        void decodeCollectedPlayback()
+      }, { once: true })
 
-      workletNode.port.onmessage = async (event: MessageEvent) => {
-        if (event.data.type === 'progress') {
-          setLiveProgress(event.data.value)
-        } else if (event.data.type === 'decoded') {
-          const rawPayload = new Uint8Array(event.data.payload)
-          try {
-            const { data } = detectVersion(rawPayload)
-            let plaintext: Uint8Array
-            if (decMode === 'wallet' && walletPrivHex) {
-              plaintext = await walletDecrypt(walletPrivHex, data)
-            } else {
-              plaintext = await decryptMessage(data, decPass)
-            }
-            setDecMessage(new TextDecoder().decode(plaintext))
-            setDecState('revealed')
-          } catch (err: any) {
-            const raw = err?.message || 'Decryption failed'
-            const { message } = formatEncodeError(raw)
-            setDecError(message)
-            setDecState('idle')
-          }
-          setLiveDecoding(false)
-        }
+      workletNode.port.postMessage({ type: 'init' })
+      setLiveReady(true)
+
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {})
       }
     } catch (err: any) {
       if (err?.code === 4001 || err?.message?.includes('User rejected')) {
@@ -590,11 +715,11 @@ export default function Home() {
             {downloadUrl && (
               <a
                 href={downloadUrl}
-                download="carnation-encoded.mp3"
+                download="carnation-encoded.wav"
                 className="btn btn-outline btn-success w-full"
                 data-testid="download-link"
               >
-                Download Encoded MP3
+                Download Encoded WAV
               </a>
             )}
 
@@ -769,6 +894,7 @@ export default function Home() {
                       setDecError(null)
                       setLiveDecoding(true)
                       setLiveProgress(0)
+                      setLiveReady(false)
                     }}
                     disabled={decMode === 'password' ? !decPass : !isConnected}
                     className="btn btn-secondary w-full"
@@ -794,6 +920,7 @@ export default function Home() {
                     <AudioDropzone onFile={(f) => {
                       setDecFile(f)
                       setDecAudioUrl(URL.createObjectURL(f))
+                      setLiveReady(false)
                     }} file={decFile} testId="audio-upload-decode-live" />
                   </div>
                 )}
@@ -812,9 +939,11 @@ export default function Home() {
                         <span className="w-1 h-3 bg-carnation rounded-full animate-pulse [animation-delay:600ms]" />
                       </div>
                       <p className="text-sm text-gray-400">
-                        {liveProgress > 0
-                          ? `Decoding... ${Math.round(liveProgress * 100)}%`
-                          : 'Press play to start decoding'}
+                        {!liveReady
+                          ? 'Preparing decoder...'
+                          : liveProgress > 0
+                            ? `Decoding... ${Math.round(liveProgress * 100)}%`
+                            : 'Press play to start decoding'}
                       </p>
                       <div className="w-full">
                         <progress
@@ -825,7 +954,7 @@ export default function Home() {
                       </div>
                     </div>
 
-                    <AudioPlayer src={decAudioUrl} ref={audioRef} onPlay={handleLiveDecode} />
+                    <AudioPlayer src={decAudioUrl} ref={audioRef} onReady={handleLiveDecode} onPlay={handleLiveDecode} controlsEnabled={liveReady} />
                   </div>
                 )}
 
@@ -838,6 +967,7 @@ export default function Home() {
                       setDecFile(null)
                       setDecAudioUrl(null)
                       setLiveProgress(0)
+                      setLiveReady(false)
                       if (audioCtxRef.current) {
                         audioCtxRef.current.close().catch(() => {})
                         audioCtxRef.current = null

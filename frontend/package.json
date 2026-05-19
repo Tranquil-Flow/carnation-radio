@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "test:live-decode": "npm run build && node test-live-decode.js"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
