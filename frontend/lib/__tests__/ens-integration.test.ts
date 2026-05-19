@@ -3,13 +3,10 @@
  *
  * @integration
  * These tests require a live Ethereum mainnet RPC connection.
- * They are skipped when no RPC is available (VITE_ALCHEMY_KEY not set or no network).
+ * They are skipped by default so the regular unit test suite stays hermetic.
  *
  * Run with:
- *   VITE_ALCHEMY_KEY=<your-key> npx vitest run --reporter=verbose lib/__tests__/ens-integration.test.ts
- *
- * Or with a public RPC (rate-limited):
- *   npx vitest run lib/__tests__/ens-integration.test.ts
+ *   RUN_ENS_INTEGRATION=1 npx vitest run --reporter=verbose lib/__tests__/ens-integration.test.ts
  */
 
 import { describe, it, expect, beforeAll } from 'vitest'
@@ -17,9 +14,8 @@ import { resolveENS } from '../ecies'
 import { encryptToAddress } from '../encrypt-to-address'
 import { clearRegistryCache } from '../registry'
 
-// Detect if we have network access for integration tests.
-// We attempt a quick DNS check or rely on env var to skip.
-const SKIP_INTEGRATION = process.env.SKIP_INTEGRATION === '1'
+const RUN_ENS_INTEGRATION = process.env.RUN_ENS_INTEGRATION === '1'
+const SKIP_INTEGRATION = process.env.SKIP_INTEGRATION === '1' || !RUN_ENS_INTEGRATION
 
 // Well-known stable ENS names and their expected addresses
 const VITALIK_ENS = 'vitalik.eth'
