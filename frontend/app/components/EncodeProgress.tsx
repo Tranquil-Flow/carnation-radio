@@ -10,7 +10,7 @@ const STEPS: { key: EncodeStage; label: string }[] = [
   { key: 'transcoding', label: 'Transcoding audio' },
   { key: 'encrypting', label: 'Encrypting message' },
   { key: 'embedding', label: 'Embedding in audio' },
-  { key: 'compressing', label: 'Compressing to MP3' },
+  { key: 'compressing', label: 'Rendering encoded WAV' },
 ]
 
 export default function EncodeProgress({ stage }: Props) {
