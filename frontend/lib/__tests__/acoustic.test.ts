@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   acousticEncodePayload,
   acousticDecodePayload,
+  mixCarrier,
   DEFAULT_BIT_SAMPLES,
   DEFAULT_REPEATS,
 } from '../acoustic'
@@ -124,6 +125,40 @@ describe('acoustic proof codec', () => {
     }
     // 4 bit errors total — within MAGIC_BIT_TOLERANCE — should still decode.
     expect(acousticDecodePayload(encoded)).toEqual(payload)
+  })
+
+  it('decodes after mixing the ultrasonic carrier into a simulated music waveform', () => {
+    const payload = new TextEncoder().encode('hidden in song')
+    const carrier = acousticEncodePayload(payload)
+    // Build a "music" signal: a mix of typical-music frequencies (bass + mid + treble),
+    // at amplitude comparable to a normalized track. Music spectrum drops sharply above
+    // 8 kHz, so it should not interfere with the 18.5/19.5 kHz carrier.
+    const sampleRate = 44100
+    const music = new Float64Array(carrier.length)
+    const freqs = [110, 220, 440, 880, 1760, 3520]
+    for (let i = 0; i < music.length; i++) {
+      let v = 0
+      for (let j = 0; j < freqs.length; j++) {
+        v += Math.sin(2 * Math.PI * freqs[j] * i / sampleRate + j * 0.7)
+      }
+      music[i] = (v / freqs.length) * 20000
+    }
+    const mixed = mixCarrier(music, carrier)
+    expect(acousticDecodePayload(mixed)).toEqual(payload)
+  })
+
+  it('mixCarrier scales music to prevent clipping with the carrier added on top', () => {
+    const music = new Float64Array(1000)
+    for (let i = 0; i < music.length; i++) music[i] = 30000 // peak above headroom budget
+    const carrier = new Float64Array(1000)
+    for (let i = 0; i < carrier.length; i++) carrier[i] = 8000
+    const mixed = mixCarrier(music, carrier, { carrierHeadroom: 8000 })
+    let mixedPeak = 0
+    for (let i = 0; i < mixed.length; i++) {
+      const a = Math.abs(mixed[i])
+      if (a > mixedPeak) mixedPeak = a
+    }
+    expect(mixedPeak).toBeLessThanOrEqual(32767)
   })
 
   it('decodes through additive white noise at ~30% per-symbol error rate', () => {

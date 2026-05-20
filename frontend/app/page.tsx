@@ -13,7 +13,7 @@ import AudioPlayer from './components/AudioPlayer'
 import { encryptMessage, decryptMessage } from '@/lib/crypto'
 import { formatEncodeError } from '@/lib/errors'
 import { stegoEncode, stegoDecode, createFrameDecoder } from '@/lib/stego'
-import { acousticEncodePayload } from '@/lib/acoustic'
+import { acousticEncodePayload, mixCarrier } from '@/lib/acoustic'
 import { AcousticListener } from '@/lib/microphone-listener'
 import { toWav, toWavBlob } from '@/lib/transcode'
 import { maxMessageBytes, minDurationSeconds, getAudioDuration } from '@/lib/capacity'
@@ -251,7 +251,7 @@ export default function Home() {
 
       setEncStage('embedding')
       const encoded = encAcousticCarrier
-        ? acousticEncodePayload(acousticPayload)
+        ? mixCarrier(new Float64Array(samples), acousticEncodePayload(acousticPayload))
         : await stegoEncode(
           new Float64Array(samples),
           encrypted,
@@ -908,8 +908,8 @@ export default function Home() {
                 data-testid="checkbox-acoustic-carrier"
               />
               <span>
-                <span className="block text-sm text-gray-200">Acoustic proof carrier</span>
-                <span className="block text-xs text-gray-500">Outputs robust speaker/microphone tones for air-gap decoding tests.</span>
+                <span className="block text-sm text-gray-200">Ultrasonic carrier (audible-mic decode)</span>
+                <span className="block text-xs text-gray-500">Mixes a near-inaudible FSK data signal (18.5/19.5 kHz) into your song so a real microphone can decode it through the air. Music sounds normal to most adults.</span>
               </span>
             </label>
 
