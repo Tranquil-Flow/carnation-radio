@@ -8,7 +8,11 @@ export type AcousticDecodeOptions = {
 import { rsEncodeShortened, rsDecodeShortened, RS_PARITY_BYTES } from './reed-solomon'
 
 export const DEFAULT_SAMPLE_RATE = 44100
-export const DEFAULT_BIT_SAMPLES = 735 // 16.67ms at 44.1kHz; 1200Hz=20 cycles, 1800Hz=30 cycles
+// 200 samples ≈ 4.5ms per bit. At the 18.5/19.5 kHz ultrasonic carrier this still gives
+// ~84/88 cycles per Goertzel window (more than enough for clean tone discrimination)
+// while shrinking total packet duration by ~3.7x compared to the old 735-sample setting.
+// Goertzel bandwidth at N=200, sr=44100: ~220 Hz, vs 1000 Hz tone separation — plenty.
+export const DEFAULT_BIT_SAMPLES = 200
 // 3 repetitions × Reed-Solomon: bit-level redundancy handles raw symbol noise, RS(255,223)
 // then corrects up to 16 byte errors per block. 5x rep + RS is robust but adds 40% to WAV
 // duration; in practice 3x + RS holds up well at SNR > +5 dB and keeps packets compact.
