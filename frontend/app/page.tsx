@@ -13,7 +13,8 @@ import AudioPlayer from './components/AudioPlayer'
 import { encryptMessage, decryptMessage } from '@/lib/crypto'
 import { formatEncodeError } from '@/lib/errors'
 import { stegoEncode, stegoDecode, createFrameDecoder } from '@/lib/stego'
-import { acousticDecodePayload, acousticEncodePayload } from '@/lib/acoustic'
+import { acousticEncodePayload } from '@/lib/acoustic'
+import { AcousticListener } from '@/lib/microphone-listener'
 import { toWav, toWavBlob } from '@/lib/transcode'
 import { maxMessageBytes, minDurationSeconds, getAudioDuration } from '@/lib/capacity'
 import {
@@ -91,6 +92,10 @@ export default function Home() {
   const [liveDecoding, setLiveDecoding] = useState(false)
   const [liveProgress, setLiveProgress] = useState(0)
   const [liveReady, setLiveReady] = useState(false)
+  // Mic-only fields: elapsed wall-clock seconds + best-known acoustic status.
+  const [micElapsedSec, setMicElapsedSec] = useState(0)
+  const [micStatus, setMicStatus] = useState<'preparing' | 'listening' | 'preamble-detected' | 'failed'>('preparing')
+  const [micStatusDetail, setMicStatusDetail] = useState<string | null>(null)
 
   // Clear cached wallet identity when account changes
   useEffect(() => {
@@ -562,6 +567,9 @@ export default function Home() {
     setLiveProgress(0)
     setLiveReady(false)
     setLiveDecoding(true)
+    setMicElapsedSec(0)
+    setMicStatus('preparing')
+    setMicStatusDetail(null)
     setDecState('listening')
 
     try {
@@ -593,17 +601,23 @@ export default function Home() {
       console.log('Microphone stream settings', stream.getAudioTracks()[0]?.getSettings?.())
       micStreamRef.current = stream
 
-      // Decode up to two minutes of captured room audio. The FrameDecoder also tries
-      // periodically, so successful messages can reveal before the full window elapses.
-      const maxCaptureSeconds = 120
+      // Cap total mic listening at 3 minutes — surfaces a UI failure after that.
+      const maxCaptureSeconds = 180
       const totalFrames = Math.floor(maxCaptureSeconds * 44100 / 1024)
       const ctx = new AudioContext({ sampleRate: 44100 })
       console.log('Microphone AudioContext sampleRate', ctx.sampleRate)
       audioCtxRef.current = ctx
       const frameDecoder = await createFrameDecoder(embedKey, totalFrames)
-      const collectedFrames: Float64Array[] = []
+      // Bounded rolling-window FSK listener. Window sized for 5x bit-repetition + RS(255,223)
+      // packets: small messages → ~62s of audio, so 120s window safely covers one full packet
+      // plus loop slack. First decode attempt ~3s after capture begins, then ~every 2s
+      // (CPU-cheaper than every 1s with the larger search space + RS overhead).
+      const acoustic = new AcousticListener({
+        rollingWindowSeconds: 120,
+        minFramesBeforeFirstDecode: 130,
+        decodeIntervalFrames: 86,
+      })
       let decoded = false
-      let tryingCollectedDecode = false
 
       const stopMic = () => {
         micStreamRef.current?.getTracks().forEach(track => track.stop())
@@ -626,55 +640,6 @@ export default function Home() {
         stopMic()
       }
 
-      const tryDecodeCollectedMicrophone = async () => {
-        if (decoded || tryingCollectedDecode || collectedFrames.length === 0) return
-        tryingCollectedDecode = true
-        try {
-          const totalSamples = collectedFrames.reduce((sum, frame) => sum + frame.length, 0)
-          const micSamples = new Float64Array(totalSamples)
-          let offset = 0
-          for (const frame of collectedFrames) {
-            micSamples.set(frame, offset)
-            offset += frame.length
-          }
-
-          let firstSignal = 0
-          while (firstSignal < micSamples.length && Math.abs(micSamples[firstSignal]) < 1) {
-            firstSignal++
-          }
-          const candidateOffsets = Array.from(new Set([
-            firstSignal,
-            Math.max(0, firstSignal - (firstSignal % 1024)),
-            firstSignal + (1024 - (firstSignal % 1024)),
-            Math.max(0, firstSignal - 1024),
-            0,
-          ])).filter(offset => offset >= 0 && offset < micSamples.length)
-          console.log('Microphone collected decode attempt', { frames: collectedFrames.length, totalSamples, firstSignal, candidateOffsets })
-
-          try {
-            const acousticPayload = acousticDecodePayload(micSamples)
-            decoded = true
-            await revealPayload(acousticPayload)
-            return
-          } catch (err: any) {
-            console.log('Microphone acoustic decode candidate failed', err?.message || String(err))
-          }
-
-          for (const candidateOffset of candidateOffsets) {
-            try {
-              const rawPayload = await stegoDecode(micSamples.subarray(candidateOffset), embedKey)
-              decoded = true
-              await revealPayload(rawPayload)
-              return
-            } catch (err: any) {
-              console.log('Microphone collected decode candidate failed', candidateOffset, err?.message || String(err))
-            }
-          }
-        } finally {
-          tryingCollectedDecode = false
-        }
-      }
-
       await ctx.audioWorklet.addModule('/worklet/decode-processor.js')
       const workletNode = new AudioWorkletNode(ctx, 'decode-processor')
       const silentGain = ctx.createGain()
@@ -689,6 +654,7 @@ export default function Home() {
       workletNode.port.onmessage = async (event: MessageEvent) => {
         if (event.data.type === 'ready') {
           setLiveReady(true)
+          setMicStatus('listening')
           return
         }
         if (event.data.type === 'error') {
@@ -702,25 +668,55 @@ export default function Home() {
         const samples = event.data.samples instanceof Float64Array
           ? event.data.samples
           : new Float64Array(event.data.samples)
-        collectedFrames.push(samples)
+        const readyToDecode = acoustic.push(samples)
+        setMicElapsedSec(acoustic.elapsedSeconds())
+
+        // Run the patchwork frame decoder in parallel for music-stego carriers.
         const rawPayload = frameDecoder.feed_frame(samples)
         setLiveProgress(Math.min(frameDecoder.progress(), 1))
 
-        if (!rawPayload) {
-          if (collectedFrames.length >= 900 && collectedFrames.length % 600 === 0) {
-            void tryDecodeCollectedMicrophone()
+        if (rawPayload) {
+          decoded = true
+          try {
+            await revealPayload(rawPayload)
+          } catch (err: any) {
+            const raw = err?.message || 'Decryption failed'
+            const { message } = formatEncodeError(raw)
+            setDecError(message)
+            setDecState('idle')
+            stopMic()
           }
           return
         }
-        decoded = true
-        try {
-          await revealPayload(rawPayload)
-        } catch (err: any) {
-          const raw = err?.message || 'Decryption failed'
-          const { message } = formatEncodeError(raw)
-          setDecError(message)
-          setDecState('idle')
-          stopMic()
+
+        if (readyToDecode) {
+          const status = await acoustic.tryDecode()
+          console.log(`tryDecode @${acoustic.elapsedSeconds().toFixed(1)}s → ${status.kind}${status.kind === 'preamble-detected' ? ` (${status.detail})` : ''}`)
+          if (decoded) return
+          if (status.kind === 'decoded') {
+            decoded = true
+            try {
+              await revealPayload(status.payload)
+            } catch (err: any) {
+              const raw = err?.message || 'Decryption failed'
+              const { message } = formatEncodeError(raw)
+              setDecError(message)
+              setDecState('idle')
+              stopMic()
+            }
+            return
+          }
+          if (status.kind === 'preamble-detected') {
+            setMicStatus('preamble-detected')
+            setMicStatusDetail(status.detail)
+          }
+          if (acoustic.elapsedSeconds() >= maxCaptureSeconds) {
+            const last = acoustic.getLastError() || 'no acoustic signal detected'
+            setMicStatus('failed')
+            setDecError(`Microphone listening timed out (${maxCaptureSeconds}s) — ${last}`)
+            setDecState('idle')
+            stopMic()
+          }
         }
       }
 
@@ -731,6 +727,7 @@ export default function Home() {
       silentGain.connect(ctx.destination)
       workletNode.port.postMessage({ type: 'init' })
       setLiveReady(true)
+      setMicStatus('listening')
 
       if (ctx.state === 'suspended') {
         ctx.resume().catch(() => {})
@@ -745,6 +742,7 @@ export default function Home() {
       setDecState('idle')
       setLiveDecoding(false)
       setLiveReady(false)
+      setMicStatus('failed')
       micStreamRef.current?.getTracks().forEach(track => track.stop())
       micStreamRef.current = null
       audioCtxRef.current?.close().catch(() => {})
@@ -991,18 +989,21 @@ export default function Home() {
               <button
                 className={`tab flex-1 ${decMethod === 'upload' ? 'tab-active !bg-gray-700 !text-white' : ''}`}
                 onClick={() => setDecMethod('upload')}
+                data-testid="decode-method-upload"
               >
                 Upload File
               </button>
               <button
                 className={`tab flex-1 ${decMethod === 'listen' ? 'tab-active !bg-gray-700 !text-white' : ''}`}
                 onClick={() => setDecMethod('listen')}
+                data-testid="decode-method-listen"
               >
                 Browser Playback
               </button>
               <button
                 className={`tab flex-1 ${decMethod === 'mic' ? 'tab-active !bg-gray-700 !text-white' : ''}`}
                 onClick={() => setDecMethod('mic')}
+                data-testid="decode-method-mic"
               >
                 Listen from Microphone
               </button>
@@ -1236,7 +1237,7 @@ export default function Home() {
                 )}
 
                 {liveDecoding && decState !== 'revealed' && (
-                  <div className="flex flex-col items-center py-6 space-y-3">
+                  <div className="flex flex-col items-center py-6 space-y-3" data-testid="mic-listening-panel">
                     <div className="flex items-center gap-1">
                       <span className="w-1 h-4 bg-carnation rounded-full animate-pulse" />
                       <span className="w-1 h-6 bg-carnation rounded-full animate-pulse [animation-delay:150ms]" />
@@ -1244,23 +1245,43 @@ export default function Home() {
                       <span className="w-1 h-6 bg-carnation rounded-full animate-pulse [animation-delay:450ms]" />
                       <span className="w-1 h-4 bg-carnation rounded-full animate-pulse [animation-delay:600ms]" />
                     </div>
-                    <p className="text-sm text-gray-400">
+                    <p className="text-sm text-gray-400" data-testid="mic-status-text">
                       {!liveReady
-                        ? 'Preparing microphone decoder...'
-                        : liveProgress > 0
-                          ? `Decoding microphone... ${Math.round(liveProgress * 100)}%`
-                          : 'Listening through microphone'}
+                        ? 'Preparing microphone decoder…'
+                        : micStatus === 'preamble-detected'
+                          ? `Acoustic signal detected — refining (${Math.round(micElapsedSec)}s)`
+                          : `Listening (${Math.round(micElapsedSec)}s)`}
                     </p>
                     <p className="text-xs text-gray-500 text-center">
                       Play the encoded audio through speakers near this device. This path uses only microphone PCM — no upload fallback.
                     </p>
+                    {micStatusDetail && (
+                      <p className="text-xs text-amber-400 text-center" data-testid="mic-status-detail">
+                        {micStatusDetail}
+                      </p>
+                    )}
                     <div className="w-full">
                       <progress
                         className="progress progress-secondary w-full"
-                        value={liveProgress}
+                        value={Math.min(micElapsedSec / 180, 1)}
                         max={1}
                       />
                     </div>
+                    <button
+                      onClick={() => {
+                        micStreamRef.current?.getTracks().forEach(t => t.stop())
+                        micStreamRef.current = null
+                        audioCtxRef.current?.close().catch(() => {})
+                        audioCtxRef.current = null
+                        setLiveDecoding(false)
+                        setDecState('idle')
+                        setMicStatus('listening')
+                      }}
+                      className="btn btn-sm btn-ghost"
+                      data-testid="btn-stop-microphone"
+                    >
+                      Stop listening
+                    </button>
                   </div>
                 )}
               </div>
