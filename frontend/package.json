@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:live-decode": "npm run build && node test-live-decode.js"
+    "test:live-decode": "npm run build && node test-live-decode.js",
+    "test:mic-decode": "npm run build && node test-mic-decode.js"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
