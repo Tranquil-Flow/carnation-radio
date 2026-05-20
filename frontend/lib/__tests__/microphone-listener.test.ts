@@ -78,7 +78,7 @@ describe('AcousticListener', () => {
 
   it('reports preamble-detected once acoustic decoder partially locks', async () => {
     const payload = new TextEncoder().encode('partial lock test with extra bytes for damage')
-    const encoded = acousticEncodePayload(payload)
+    const encoded = acousticEncodePayload(payload, { disableWarmup: true })
     // Zero out 20 payload bytes (160 bits) — beyond RS(255,223)'s 16-byte correction capacity —
     // so RS fails and the listener surfaces "checksum mismatch" (preamble + magic both succeeded).
     const corrupted = new Float64Array(encoded)
