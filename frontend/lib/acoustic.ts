@@ -5,13 +5,21 @@ export type AcousticDecodeOptions = {
   channels?: number
 }
 
-const DEFAULT_SAMPLE_RATE = 44100
-const DEFAULT_BIT_SAMPLES = 735 // 16.67ms at 44.1kHz; 1200Hz=20 cycles, 1800Hz=30 cycles
-const DEFAULT_REPEATS = 3
+import { rsEncodeShortened, rsDecodeShortened, RS_PARITY_BYTES } from './reed-solomon'
+
+export const DEFAULT_SAMPLE_RATE = 44100
+export const DEFAULT_BIT_SAMPLES = 735 // 16.67ms at 44.1kHz; 1200Hz=20 cycles, 1800Hz=30 cycles
+// 3 repetitions × Reed-Solomon: bit-level redundancy handles raw symbol noise, RS(255,223)
+// then corrects up to 16 byte errors per block. 5x rep + RS is robust but adds 40% to WAV
+// duration; in practice 3x + RS holds up well at SNR > +5 dB and keeps packets compact.
+export const DEFAULT_REPEATS = 3
 const FREQ_ZERO = 1200
 const FREQ_ONE = 1800
-const AMPLITUDE = 9000
+const AMPLITUDE = 28000
 const MAGIC = [0x43, 0x52, 0x41, 0x43] // CRAC: Carnation Radio Acoustic Codec
+// Allow up to this many bit-mismatches in the 32-bit magic before rejecting. CRC32 on payload
+// is the actual integrity check; magic just needs to be "close enough" to confirm packet shape.
+const MAGIC_BIT_TOLERANCE = 4
 const PREAMBLE_BITS = [
   ...Array.from({ length: 32 }, (_, i) => i % 2),
   1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0,
@@ -49,17 +57,22 @@ function bitsToBytes(bits: number[]): Uint8Array {
 }
 
 function buildPacket(payload: Uint8Array): Uint8Array {
-  if (payload.length > 0xffff) throw new Error('Acoustic payload too long')
-  const packet = new Uint8Array(MAGIC.length + 2 + 4 + payload.length)
+  // Apply shortened RS(255, 223) to the payload — 32 parity bytes appended.
+  // The length field below records the FULL RS-coded length (payload + 32).
+  const rsEncoded = rsEncodeShortened(payload)
+  if (rsEncoded.length > 0xffff) throw new Error('Acoustic payload too long')
+  const packet = new Uint8Array(MAGIC.length + 2 + 4 + rsEncoded.length)
   packet.set(MAGIC, 0)
-  packet[4] = (payload.length >> 8) & 0xff
-  packet[5] = payload.length & 0xff
+  packet[4] = (rsEncoded.length >> 8) & 0xff
+  packet[5] = rsEncoded.length & 0xff
+  // CRC32 is computed over the ORIGINAL payload, not the RS-encoded one — that way
+  // a successful RS-decode followed by CRC match cross-validates both layers.
   const checksum = crc32(payload)
   packet[6] = (checksum >>> 24) & 0xff
   packet[7] = (checksum >>> 16) & 0xff
   packet[8] = (checksum >>> 8) & 0xff
   packet[9] = checksum & 0xff
-  packet.set(payload, 10)
+  packet.set(rsEncoded, 10)
   return packet
 }
 
@@ -123,11 +136,20 @@ function findPreamble(bits: number[], from = 0): number {
 
 function verifyAndExtract(packet: Uint8Array): Uint8Array | null {
   if (packet.length < 10) return null
-  for (let i = 0; i < MAGIC.length; i++) if (packet[i] !== MAGIC[i]) return null
+  // Magic byte check is intentionally lenient here — the per-iteration tolerant check
+  // in acousticDecodePayload already filtered, so packet has the right shape.
   const length = (packet[4] << 8) | packet[5]
+  if (length < RS_PARITY_BYTES) return null
   if (packet.length < 10 + length) return null
   const expected = ((packet[6] << 24) | (packet[7] << 16) | (packet[8] << 8) | packet[9]) >>> 0
-  const payload = packet.slice(10, 10 + length)
+  const rsEncoded = packet.slice(10, 10 + length)
+  // Run RS decode to correct up to 16 byte errors. Failures throw — caller treats as null.
+  let payload: Uint8Array
+  try {
+    payload = rsDecodeShortened(rsEncoded)
+  } catch {
+    return null
+  }
   if (crc32(payload) !== expected) return null
   return payload
 }
@@ -153,6 +175,19 @@ export function acousticEncodePayload(payload: Uint8Array, options: AcousticDeco
     }
   }
   return samples
+}
+
+// Higher tier = more useful diagnostic, kept in preference to lower-tier errors.
+// 0: nothing detected → preamble not found
+// 1: short packet/incomplete data
+// 2: preamble matched some garbage → magic mismatch
+// 3: preamble + magic + length all decoded, but payload corrupted → checksum mismatch
+const ERROR_TIERS: Record<string, number> = {
+  'Acoustic preamble not found': 0,
+  'Acoustic packet header incomplete': 1,
+  'Acoustic packet incomplete': 1,
+  'Acoustic packet magic mismatch': 2,
+  'Acoustic packet checksum mismatch': 3,
 }
 
 export function acousticDecodePayload(samples: Float64Array, options: AcousticDecodeOptions = {}): Uint8Array {
@@ -183,6 +218,9 @@ export function acousticDecodePayload(samples: Float64Array, options: AcousticDe
     for (let offset = 0; offset < symbolSamples && offset < mono.length; offset += offsetStep) offsets.add(offset)
   }
   let bestError = 'Acoustic preamble not found'
+  const recordError = (err: string) => {
+    if ((ERROR_TIERS[err] ?? -1) > (ERROR_TIERS[bestError] ?? -1)) bestError = err
+  }
 
   for (const offset of Array.from(offsets).sort((a, b) => a - b)) {
     for (const clockRatio of clockRatios) {
@@ -193,19 +231,20 @@ export function acousticDecodePayload(samples: Float64Array, options: AcousticDe
         const packetStart = preambleAt + PREAMBLE_BITS.length
         const headerBits = bits.slice(packetStart, packetStart + 80)
         if (headerBits.length < 80) {
-          bestError = 'Acoustic packet header incomplete'
+          recordError('Acoustic packet header incomplete')
           break
         }
         const header = bitsToBytes(headerBits)
-        let magicMatches = true
+        // Hamming distance over the 32-bit magic. Allow up to MAGIC_BIT_TOLERANCE flips:
+        // CRC32 on the payload is the real integrity check, magic just confirms packet shape.
+        let magicBitErrors = 0
         for (let i = 0; i < MAGIC.length; i++) {
-          if (header[i] !== MAGIC[i]) {
-            magicMatches = false
-            break
-          }
+          let diff = (header[i] ^ MAGIC[i]) & 0xff
+          while (diff) { magicBitErrors++; diff &= diff - 1 }
+          if (magicBitErrors > MAGIC_BIT_TOLERANCE) break
         }
-        if (!magicMatches) {
-          bestError = 'Acoustic packet magic mismatch'
+        if (magicBitErrors > MAGIC_BIT_TOLERANCE) {
+          recordError('Acoustic packet magic mismatch')
           preambleAt = findPreamble(bits, preambleAt + 1)
           continue
         }
@@ -213,12 +252,12 @@ export function acousticDecodePayload(samples: Float64Array, options: AcousticDe
         const totalPacketBits = (10 + payloadLength) * 8
         const packetBits = bits.slice(packetStart, packetStart + totalPacketBits)
         if (packetBits.length < totalPacketBits) {
-          bestError = 'Acoustic packet incomplete'
+          recordError('Acoustic packet incomplete')
           break
         }
         const payload = verifyAndExtract(bitsToBytes(packetBits))
         if (payload) return payload
-        bestError = 'Acoustic packet checksum mismatch'
+        recordError('Acoustic packet checksum mismatch')
         preambleAt = findPreamble(bits, preambleAt + 1)
       }
     }
