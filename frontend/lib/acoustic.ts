@@ -5,6 +5,13 @@ export type AcousticDecodeOptions = {
   channels?: number
 }
 
+export type AcousticEncodeOptions = AcousticDecodeOptions & {
+  /** Disable the audibility-masking warmup tone prepended to the carrier. Tests that
+   * inject precise sample-level corruptions use this so their offsets stay anchored
+   * to the bit grid; production callers should leave warmup on. */
+  disableWarmup?: boolean
+}
+
 import { rsEncodeShortened, rsDecodeShortened, RS_PARITY_BYTES } from './reed-solomon'
 
 export const DEFAULT_SAMPLE_RATE = 44100
@@ -197,7 +204,7 @@ export function mixCarrier(
   return out
 }
 
-export function acousticEncodePayload(payload: Uint8Array, options: AcousticDecodeOptions = {}): Float64Array {
+export function acousticEncodePayload(payload: Uint8Array, options: AcousticEncodeOptions = {}): Float64Array {
   const sampleRate = options.sampleRate ?? DEFAULT_SAMPLE_RATE
   const bitSamples = options.bitSamples ?? DEFAULT_BIT_SAMPLES
   const repeats = options.repeats ?? DEFAULT_REPEATS
@@ -211,7 +218,6 @@ export function acousticEncodePayload(payload: Uint8Array, options: AcousticDeco
       const start = (symbol * repeats + repeat) * bitSamples
       for (let i = 0; i < bitSamples; i++) {
         const phase = 2 * Math.PI * freq * i / sampleRate
-        // Short raised-cosine edges reduce clicks while keeping bit energy concentrated.
         const edge = Math.min(1, i / 80, (bitSamples - 1 - i) / 80)
         samples[start + i] = Math.sin(phase) * AMPLITUDE * Math.max(0, edge)
       }
