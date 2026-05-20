@@ -37,7 +37,7 @@ test.describe('Carnation Radio E2E', () => {
     await expect(page.getByText('Transcoding audio')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('Encrypting message')).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText('Embedding in audio')).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByText('Compressing to MP3')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('Rendering encoded WAV')).toBeVisible({ timeout: 30_000 })
 
     // Wait for download link — race with error
     const encError = page.getByText('Encoding failed')
