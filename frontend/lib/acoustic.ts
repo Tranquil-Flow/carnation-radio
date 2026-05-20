@@ -13,9 +13,17 @@ export const DEFAULT_BIT_SAMPLES = 735 // 16.67ms at 44.1kHz; 1200Hz=20 cycles, 
 // then corrects up to 16 byte errors per block. 5x rep + RS is robust but adds 40% to WAV
 // duration; in practice 3x + RS holds up well at SNR > +5 dB and keeps packets compact.
 export const DEFAULT_REPEATS = 3
-const FREQ_ZERO = 1200
-const FREQ_ONE = 1800
-const AMPLITUDE = 28000
+// Ultrasonic FSK band (18.5 / 19.5 kHz). Above the audible range for most adults
+// (~70% of people 25+ can't hear 18 kHz; ~90% can't hear 19 kHz). Below the 22.05 kHz
+// Nyquist limit at 44.1 kHz sample rate. Consumer MacBook/iPhone speakers and mics
+// reproduce this band cleanly. Cats, dogs, and some children CAN hear it.
+const FREQ_ZERO = 18500
+const FREQ_ONE = 19500
+// Lower amplitude for ultrasonic mixed-with-music mode: we add this signal on top of
+// the music waveform, so we need headroom for music peaks. 8000 ≈ -12 dBFS, well above
+// the hearing threshold at 18+ kHz for adults but easily resolved by the Goertzel decoder
+// at the mic (RMS roughly 25–80 in observed physical tests).
+const AMPLITUDE = 8000
 const MAGIC = [0x43, 0x52, 0x41, 0x43] // CRAC: Carnation Radio Acoustic Codec
 // Allow up to this many bit-mismatches in the 32-bit magic before rejecting. CRC32 on payload
 // is the actual integrity check; magic just needs to be "close enough" to confirm packet shape.
@@ -152,6 +160,36 @@ function verifyAndExtract(packet: Uint8Array): Uint8Array | null {
   }
   if (crc32(payload) !== expected) return null
   return payload
+}
+
+/**
+ * Mixes the FSK carrier additively into a music signal. Music is scaled down if needed
+ * so peak(music) + peak(carrier) stays under int16 range. Output is the longer of the
+ * two; if the carrier extends past the music, trailing carrier samples are emitted with
+ * silence as the music portion (and vice versa).
+ *
+ * Use this together with acousticEncodePayload to produce a song with a barely-audible
+ * ultrasonic data signal added on top — the human listener hears music; the decoder
+ * hears the FSK at 18.5/19.5 kHz.
+ */
+export function mixCarrier(
+  music: Float64Array,
+  carrier: Float64Array,
+  options: { carrierHeadroom?: number; maxInt16?: number } = {},
+): Float64Array {
+  const carrierHeadroom = options.carrierHeadroom ?? AMPLITUDE
+  const maxInt16 = options.maxInt16 ?? 32767
+  let musicPeak = 0
+  for (let i = 0; i < music.length; i++) {
+    const a = Math.abs(music[i])
+    if (a > musicPeak) musicPeak = a
+  }
+  const allowedMusicPeak = maxInt16 - carrierHeadroom
+  const scale = musicPeak > allowedMusicPeak ? allowedMusicPeak / musicPeak : 1
+  const out = new Float64Array(Math.max(music.length, carrier.length))
+  for (let i = 0; i < music.length; i++) out[i] = music[i] * scale
+  for (let i = 0; i < carrier.length; i++) out[i] += carrier[i]
+  return out
 }
 
 export function acousticEncodePayload(payload: Uint8Array, options: AcousticDecodeOptions = {}): Float64Array {

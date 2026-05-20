@@ -17,7 +17,10 @@ import fs from 'node:fs/promises'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const FIXTURE_WAV = path.resolve(__dirname, '../e2e/fixtures/.acoustic-generated.wav')
-const MUSIC_WAV = path.resolve(__dirname, '../e2e/fixtures/test_60s.wav')
+// Use a real song instead of the engineering 60-second 440 Hz sine wave that ships
+// as the unit-test fixture. Bella Ciao is 127s of stereo broadband music — exercises
+// the codec against a realistic spectrum.
+const MUSIC_WAV = path.resolve(process.env.HOME || '', 'Downloads/bella-ciao.wav')
 const PASSPHRASE = 'live-test-2026'
 const EXPECTED_MESSAGE = 'bella ciao physical'
 const BASE_URL = 'http://localhost:3000'
