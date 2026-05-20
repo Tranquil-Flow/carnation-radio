@@ -90,7 +90,7 @@ describe('acoustic proof codec', () => {
 
   it('reports checksum mismatch — not preamble-not-found — when payload is too corrupted for RS to recover', () => {
     const payload = new TextEncoder().encode('payload to corrupt with many bytes worth of damage')
-    const encoded = acousticEncodePayload(payload)
+    const encoded = acousticEncodePayload(payload, { disableWarmup: true })
     // Layout (bit indices): preamble 0..47, magic 48..79, length 80..95, crc 96..127, payload 128+
     // RS(255,223) corrects up to 16 byte errors. Zero out 20 bytes (160 bits) of payload to
     // exceed the correction capacity — RS-decode fails and verifyAndExtract returns null,
@@ -106,7 +106,8 @@ describe('acoustic proof codec', () => {
 
   it('decodes when the magic bytes have up to 4 bit-errors (tolerant magic check)', () => {
     const payload = new TextEncoder().encode('hello tolerant magic')
-    const encoded = acousticEncodePayload(payload)
+    // disableWarmup so bit offsets in the corruption math stay anchored to the bit grid.
+    const encoded = acousticEncodePayload(payload, { disableWarmup: true })
     // Flip one symbol within each of the first 4 magic-byte regions so each byte loses 1 bit
     // after majority vote. With DEFAULT_REPEATS=5 we need to corrupt 3 of 5 reps for a flip.
     const bitWindow = DEFAULT_REPEATS * DEFAULT_BIT_SAMPLES
