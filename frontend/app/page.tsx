@@ -12,7 +12,8 @@ import MessageReveal from './components/MessageReveal'
 import AudioPlayer from './components/AudioPlayer'
 import { encryptMessage, decryptMessage } from '@/lib/crypto'
 import { formatEncodeError } from '@/lib/errors'
-import { createFrameDecoder, stegoEncode, stegoDecode } from '@/lib/stego'
+import { stegoEncode, stegoDecode, createFrameDecoder } from '@/lib/stego'
+import { acousticDecodePayload, acousticEncodePayload } from '@/lib/acoustic'
 import { toWav, toWavBlob } from '@/lib/transcode'
 import { maxMessageBytes, minDurationSeconds, getAudioDuration } from '@/lib/capacity'
 import {
@@ -26,6 +27,7 @@ import { lookupRegistry, registerSelf } from '@/lib/registry'
 import { detectVersion, isClaimMode, parseClaimPayload } from '@/lib/wire'
 
 type Tab = 'encode' | 'decode'
+type DecodeMethod = 'upload' | 'listen' | 'mic'
 
 function deriveEmbedKey(secret: string): Uint8Array {
   return sha256(new TextEncoder().encode('carnation-embed:' + secret))
@@ -54,6 +56,7 @@ export default function Home() {
   // Claim link state (Mode B encryption)
   const [claimLink, setClaimLink] = useState<string | null>(null)
   const [claimCopied, setClaimCopied] = useState(false)
+  const [encAcousticCarrier, setEncAcousticCarrier] = useState(false)
 
   // Recipient registry status
   const [recipientStatus, setRecipientStatus] = useState<'idle' | 'checking' | 'registered' | 'unregistered'>('idle')
@@ -63,7 +66,7 @@ export default function Home() {
   const [pendingClaimKey, setPendingClaimKey] = useState<Uint8Array | null>(null)
 
   // Decode state
-  const [decMethod, setDecMethod] = useState<'upload' | 'listen'>('upload')
+  const [decMethod, setDecMethod] = useState<DecodeMethod>('upload')
   const [decFile, setDecFile] = useState<File | null>(null)
   const [decPass, setDecPass] = useState('')
   const [decMode, setDecMode] = useState<'password' | 'wallet'>('password')
@@ -84,6 +87,7 @@ export default function Home() {
   // Live decode state
   const audioRef = useRef<HTMLAudioElement>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
+  const micStreamRef = useRef<MediaStream | null>(null)
   const [liveDecoding, setLiveDecoding] = useState(false)
   const [liveProgress, setLiveProgress] = useState(0)
   const [liveReady, setLiveReady] = useState(false)
@@ -118,6 +122,10 @@ export default function Home() {
       if (audioCtxRef.current) {
         audioCtxRef.current.close().catch(() => {})
         audioCtxRef.current = null
+      }
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach(track => track.stop())
+        micStreamRef.current = null
       }
     }
   }, [tab])
@@ -224,13 +232,26 @@ export default function Home() {
         embedKey = deriveEmbedKey(encPass)
       }
 
-      // Rust engine adds version byte + framing internally via build_payload()
+      // Rust engine adds version byte + framing internally via build_payload() for the legacy
+      // stego path. The acoustic proof carrier has its own packet framing, so provide the
+      // same versioned payload that stegoDecode() returns after Rust framing extraction.
+      const acousticPayload = encrypted[0] >= 0x01 && encrypted[0] <= 0x12
+        ? encrypted
+        : (() => {
+          const payload = new Uint8Array(1 + encrypted.length)
+          payload[0] = 0x01
+          payload.set(encrypted, 1)
+          return payload
+        })()
+
       setEncStage('embedding')
-      const encoded = await stegoEncode(
-        new Float64Array(samples),
-        encrypted,
-        embedKey,
-      )
+      const encoded = encAcousticCarrier
+        ? acousticEncodePayload(acousticPayload)
+        : await stegoEncode(
+          new Float64Array(samples),
+          encrypted,
+          embedKey,
+        )
 
       setEncStage('compressing')
       const wavBlob = await toWavBlob(new Float64Array(encoded))
@@ -533,6 +554,204 @@ export default function Home() {
     }
   }
 
+  async function handleMicrophoneDecode() {
+    if (audioCtxRef.current) return
+
+    setDecError(null)
+    setDecMessage('')
+    setLiveProgress(0)
+    setLiveReady(false)
+    setLiveDecoding(true)
+    setDecState('listening')
+
+    try {
+      let embedKey: Uint8Array
+      let walletPrivHex: string | undefined
+
+      if (decMode === 'wallet') {
+        const { privHex } = await getWalletKeys()
+        if (!address) throw new Error('Wallet not connected')
+        embedKey = deriveEmbedKey(address.toLowerCase())
+        walletPrivHex = privHex
+      } else {
+        embedKey = deriveEmbedKey(decPass)
+      }
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('Microphone capture is not available in this browser')
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: 1,
+          sampleRate: 44100,
+        },
+      })
+      console.log('Microphone stream settings', stream.getAudioTracks()[0]?.getSettings?.())
+      micStreamRef.current = stream
+
+      // Decode up to two minutes of captured room audio. The FrameDecoder also tries
+      // periodically, so successful messages can reveal before the full window elapses.
+      const maxCaptureSeconds = 120
+      const totalFrames = Math.floor(maxCaptureSeconds * 44100 / 1024)
+      const ctx = new AudioContext({ sampleRate: 44100 })
+      console.log('Microphone AudioContext sampleRate', ctx.sampleRate)
+      audioCtxRef.current = ctx
+      const frameDecoder = await createFrameDecoder(embedKey, totalFrames)
+      const collectedFrames: Float64Array[] = []
+      let decoded = false
+      let tryingCollectedDecode = false
+
+      const stopMic = () => {
+        micStreamRef.current?.getTracks().forEach(track => track.stop())
+        micStreamRef.current = null
+        audioCtxRef.current?.close().catch(() => {})
+        audioCtxRef.current = null
+        setLiveDecoding(false)
+      }
+
+      const revealPayload = async (rawPayload: Uint8Array) => {
+        const { data } = detectVersion(rawPayload)
+        let plaintext: Uint8Array
+        if (decMode === 'wallet' && walletPrivHex) {
+          plaintext = await walletDecrypt(walletPrivHex, data)
+        } else {
+          plaintext = await decryptMessage(data, decPass)
+        }
+        setDecMessage(new TextDecoder().decode(plaintext))
+        setDecState('revealed')
+        stopMic()
+      }
+
+      const tryDecodeCollectedMicrophone = async () => {
+        if (decoded || tryingCollectedDecode || collectedFrames.length === 0) return
+        tryingCollectedDecode = true
+        try {
+          const totalSamples = collectedFrames.reduce((sum, frame) => sum + frame.length, 0)
+          const micSamples = new Float64Array(totalSamples)
+          let offset = 0
+          for (const frame of collectedFrames) {
+            micSamples.set(frame, offset)
+            offset += frame.length
+          }
+
+          let firstSignal = 0
+          while (firstSignal < micSamples.length && Math.abs(micSamples[firstSignal]) < 1) {
+            firstSignal++
+          }
+          const candidateOffsets = Array.from(new Set([
+            firstSignal,
+            Math.max(0, firstSignal - (firstSignal % 1024)),
+            firstSignal + (1024 - (firstSignal % 1024)),
+            Math.max(0, firstSignal - 1024),
+            0,
+          ])).filter(offset => offset >= 0 && offset < micSamples.length)
+          console.log('Microphone collected decode attempt', { frames: collectedFrames.length, totalSamples, firstSignal, candidateOffsets })
+
+          try {
+            const acousticPayload = acousticDecodePayload(micSamples)
+            decoded = true
+            await revealPayload(acousticPayload)
+            return
+          } catch (err: any) {
+            console.log('Microphone acoustic decode candidate failed', err?.message || String(err))
+          }
+
+          for (const candidateOffset of candidateOffsets) {
+            try {
+              const rawPayload = await stegoDecode(micSamples.subarray(candidateOffset), embedKey)
+              decoded = true
+              await revealPayload(rawPayload)
+              return
+            } catch (err: any) {
+              console.log('Microphone collected decode candidate failed', candidateOffset, err?.message || String(err))
+            }
+          }
+        } finally {
+          tryingCollectedDecode = false
+        }
+      }
+
+      await ctx.audioWorklet.addModule('/worklet/decode-processor.js')
+      const workletNode = new AudioWorkletNode(ctx, 'decode-processor')
+      const silentGain = ctx.createGain()
+      silentGain.gain.value = 0
+
+      workletNode.onprocessorerror = () => {
+        setDecError('Microphone decoder crashed')
+        setDecState('idle')
+        stopMic()
+      }
+
+      workletNode.port.onmessage = async (event: MessageEvent) => {
+        if (event.data.type === 'ready') {
+          setLiveReady(true)
+          return
+        }
+        if (event.data.type === 'error') {
+          setDecError(event.data.message || 'Microphone decode failed')
+          setDecState('idle')
+          stopMic()
+          return
+        }
+        if (event.data.type !== 'frame' || decoded) return
+
+        const samples = event.data.samples instanceof Float64Array
+          ? event.data.samples
+          : new Float64Array(event.data.samples)
+        collectedFrames.push(samples)
+        const rawPayload = frameDecoder.feed_frame(samples)
+        setLiveProgress(Math.min(frameDecoder.progress(), 1))
+
+        if (!rawPayload) {
+          if (collectedFrames.length >= 900 && collectedFrames.length % 600 === 0) {
+            void tryDecodeCollectedMicrophone()
+          }
+          return
+        }
+        decoded = true
+        try {
+          await revealPayload(rawPayload)
+        } catch (err: any) {
+          const raw = err?.message || 'Decryption failed'
+          const { message } = formatEncodeError(raw)
+          setDecError(message)
+          setDecState('idle')
+          stopMic()
+        }
+      }
+
+      const source = ctx.createMediaStreamSource(stream)
+      source.connect(workletNode)
+      // Keep the graph alive without audible feedback.
+      workletNode.connect(silentGain)
+      silentGain.connect(ctx.destination)
+      workletNode.port.postMessage({ type: 'init' })
+      setLiveReady(true)
+
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {})
+      }
+    } catch (err: any) {
+      if (err?.code === 4001 || err?.message?.includes('User rejected') || err?.name === 'NotAllowedError') {
+        setDecError('Microphone permission was denied')
+      } else {
+        console.error('Microphone decode error:', err)
+        setDecError(err?.message || 'Microphone decode failed')
+      }
+      setDecState('idle')
+      setLiveDecoding(false)
+      setLiveReady(false)
+      micStreamRef.current?.getTracks().forEach(track => track.stop())
+      micStreamRef.current = null
+      audioCtxRef.current?.close().catch(() => {})
+      audioCtxRef.current = null
+    }
+  }
+
   async function handleRegister() {
     if (!walletClient || !walletPubKey) return
     setRegistrationStatus('registering')
@@ -682,6 +901,20 @@ export default function Home() {
               </div>
             )}
 
+            <label className="label cursor-pointer gap-3 justify-start rounded-lg border border-gray-700 bg-surface-card p-3">
+              <input
+                type="checkbox"
+                checked={encAcousticCarrier}
+                onChange={(e) => setEncAcousticCarrier(e.target.checked)}
+                className="checkbox checkbox-secondary"
+                data-testid="checkbox-acoustic-carrier"
+              />
+              <span>
+                <span className="block text-sm text-gray-200">Acoustic proof carrier</span>
+                <span className="block text-xs text-gray-500">Outputs robust speaker/microphone tones for air-gap decoding tests.</span>
+              </span>
+            </label>
+
             <button
               onClick={handleEncode}
               disabled={encodeDisabled}
@@ -765,7 +998,13 @@ export default function Home() {
                 className={`tab flex-1 ${decMethod === 'listen' ? 'tab-active !bg-gray-700 !text-white' : ''}`}
                 onClick={() => setDecMethod('listen')}
               >
-                Listen Live
+                Browser Playback
+              </button>
+              <button
+                className={`tab flex-1 ${decMethod === 'mic' ? 'tab-active !bg-gray-700 !text-white' : ''}`}
+                onClick={() => setDecMethod('mic')}
+              >
+                Listen from Microphone
               </button>
             </div>
 
@@ -958,7 +1197,8 @@ export default function Home() {
                   </div>
                 )}
 
-                {decState === 'revealed' && !liveDecoding && (
+
+            {decState === 'revealed' && decMessage && (
                   <button
                     onClick={() => {
                       setDecState('idle')
@@ -979,6 +1219,51 @@ export default function Home() {
                   </button>
                 )}
               </>
+            )}
+
+            {/* Microphone mode */}
+            {decMethod === 'mic' && (
+              <div className="space-y-4">
+                {!liveDecoding && decState !== 'revealed' && (
+                  <button
+                    onClick={handleMicrophoneDecode}
+                    disabled={decMode === 'password' ? !decPass : !isConnected}
+                    className="btn btn-secondary w-full"
+                    data-testid="btn-start-microphone"
+                  >
+                    Start Microphone Listening
+                  </button>
+                )}
+
+                {liveDecoding && decState !== 'revealed' && (
+                  <div className="flex flex-col items-center py-6 space-y-3">
+                    <div className="flex items-center gap-1">
+                      <span className="w-1 h-4 bg-carnation rounded-full animate-pulse" />
+                      <span className="w-1 h-6 bg-carnation rounded-full animate-pulse [animation-delay:150ms]" />
+                      <span className="w-1 h-8 bg-carnation rounded-full animate-pulse [animation-delay:300ms]" />
+                      <span className="w-1 h-6 bg-carnation rounded-full animate-pulse [animation-delay:450ms]" />
+                      <span className="w-1 h-4 bg-carnation rounded-full animate-pulse [animation-delay:600ms]" />
+                    </div>
+                    <p className="text-sm text-gray-400">
+                      {!liveReady
+                        ? 'Preparing microphone decoder...'
+                        : liveProgress > 0
+                          ? `Decoding microphone... ${Math.round(liveProgress * 100)}%`
+                          : 'Listening through microphone'}
+                    </p>
+                    <p className="text-xs text-gray-500 text-center">
+                      Play the encoded audio through speakers near this device. This path uses only microphone PCM — no upload fallback.
+                    </p>
+                    <div className="w-full">
+                      <progress
+                        className="progress progress-secondary w-full"
+                        value={liveProgress}
+                        max={1}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {decError && (
