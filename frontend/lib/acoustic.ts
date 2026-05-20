@@ -17,17 +17,18 @@ export const DEFAULT_BIT_SAMPLES = 200
 // then corrects up to 16 byte errors per block. 5x rep + RS is robust but adds 40% to WAV
 // duration; in practice 3x + RS holds up well at SNR > +5 dB and keeps packets compact.
 export const DEFAULT_REPEATS = 3
-// Ultrasonic FSK band (18.5 / 19.5 kHz). Above the audible range for most adults
-// (~70% of people 25+ can't hear 18 kHz; ~90% can't hear 19 kHz). Below the 22.05 kHz
-// Nyquist limit at 44.1 kHz sample rate. Consumer MacBook/iPhone speakers and mics
-// reproduce this band cleanly. Cats, dogs, and some children CAN hear it.
-const FREQ_ZERO = 18500
-const FREQ_ONE = 19500
-// Lower amplitude for ultrasonic mixed-with-music mode: we add this signal on top of
-// the music waveform, so we need headroom for music peaks. 8000 ≈ -12 dBFS, well above
-// the hearing threshold at 18+ kHz for adults but easily resolved by the Goertzel decoder
-// at the mic (RMS roughly 25–80 in observed physical tests).
-const AMPLITUDE = 8000
+// Carrier FSK band. 15.5/16.5 kHz: above adult hearing rolloff for most listeners
+// 30+ (~25% hear 15 kHz, ~10% hear 16 kHz) but still well within MacBook/iPhone
+// speaker + mic range with adequate SNR for cross-device decoding at 1-3m air.
+// Trade-off vs the 13.5/14.5 kHz prior pass: less audible squeal, slightly more
+// speaker frequency rolloff — compensated by AMPLITUDE 16000.
+const FREQ_ZERO = 15500
+const FREQ_ONE = 16500
+// Carrier amplitude for music-mixed mode. 16000 ≈ -6 dBFS — louder than the music's
+// per-bin energy in the 13-14 kHz band (where music has almost no content), so it
+// stands out at the mic even after several meters of air. We tried 8000 (cross-device:
+// no preamble detected). Trade-off: closer to clip headroom and slightly more audible.
+const AMPLITUDE = 16000
 const MAGIC = [0x43, 0x52, 0x41, 0x43] // CRAC: Carnation Radio Acoustic Codec
 // Allow up to this many bit-mismatches in the 32-bit magic before rejecting. CRC32 on payload
 // is the actual integrity check; magic just needs to be "close enough" to confirm packet shape.

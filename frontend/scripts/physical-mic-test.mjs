@@ -1,16 +1,15 @@
 #!/usr/bin/env node
-// Drives the real getUserMedia → AudioWorklet decode path with afplay sending the
-// encoded WAV through the Mac's speakers into the Mac's mic — one-device acoustic
-// proof, all initiated locally. Run via: `node scripts/physical-mic-test.mjs`
+// Drives the real getUserMedia → AudioWorklet decode path with the encoded WAV
+// played through real speakers into the real microphone.
 //
-// Assumes:
-//   - The Next.js dev server is already running at http://localhost:3000
-//   - The encoded fixture WAV exists at e2e/fixtures/.acoustic-generated.wav
-//     (re-encode by running `npx playwright test --project=chromium` once,
-//      or by encoding manually in the UI; the global-setup will recreate it).
+// Run modes:
+//   node scripts/physical-mic-test.mjs            # local: this Mac's speakers + mic
+//   PLAY_ON=m4pro node scripts/physical-mic-test.mjs   # two-device: m4pro plays, this mic decodes
+//
+// Assumes the Next.js dev server is already running at http://localhost:3000.
 
 import { chromium, devices } from '@playwright/test'
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import fs from 'node:fs/promises'
@@ -25,6 +24,8 @@ const PASSPHRASE = 'live-test-2026'
 const EXPECTED_MESSAGE = 'bella ciao physical'
 const BASE_URL = 'http://localhost:3000'
 const DECODE_TIMEOUT_MS = 150_000
+const PLAY_ON = process.env.PLAY_ON || 'local' // 'local' or an SSH host like 'm4pro'
+const REMOTE_WAV_PATH = '/tmp/carnation-two-device.wav'
 
 const log = (msg) => console.log(`[physical-test] ${msg}`)
 
@@ -86,12 +87,23 @@ async function main() {
     await page.waitForTimeout(1_000)
 
     // Play the WAV in a loop so multiple full packet copies pass through the mic.
-    log(`afplay loop starting (file plays repeatedly until decode succeeds or timeout)`)
-    afplayProc = spawn(
-      'bash',
-      ['-c', `for i in 1 2 3; do afplay "${FIXTURE_WAV}" || break; done`],
-      { stdio: 'inherit' },
-    )
+    if (PLAY_ON === 'local') {
+      log(`afplay loop starting on LOCAL speakers`)
+      afplayProc = spawn(
+        'bash',
+        ['-c', `for i in 1 2 3; do afplay "${FIXTURE_WAV}" || break; done`],
+        { stdio: 'inherit' },
+      )
+    } else {
+      log(`Copying WAV to ${PLAY_ON}:${REMOTE_WAV_PATH}`)
+      execFileSync('scp', ['-q', FIXTURE_WAV, `${PLAY_ON}:${REMOTE_WAV_PATH}`], { stdio: 'inherit' })
+      log(`afplay loop starting on REMOTE host ${PLAY_ON}`)
+      afplayProc = spawn(
+        'ssh',
+        [PLAY_ON, `for i in 1 2 3; do afplay ${REMOTE_WAV_PATH} || break; done`],
+        { stdio: 'inherit' },
+      )
+    }
 
     const decodedLocator = page.getByTestId('decoded-message')
     const errorLocator = page.locator('.alert-error')
@@ -138,8 +150,13 @@ async function main() {
     }
   } finally {
     if (afplayProc && !afplayProc.killed) {
-      log(`Stopping afplay`)
+      log(`Stopping playback`)
       afplayProc.kill('SIGTERM')
+    }
+    if (PLAY_ON !== 'local') {
+      try {
+        execFileSync('ssh', [PLAY_ON, 'pkill -9 afplay 2>/dev/null; true'], { stdio: 'ignore' })
+      } catch { /* host might be offline; afplay loop exits on session close anyway */ }
     }
     log(`Browser console lines captured: ${consoleLogs.length}`)
     log(`Last 60 console lines:`)
