@@ -25,7 +25,17 @@
  * encrypted with password or wallet mode still works.
  */
 
-import { rsEncodeShortened, rsDecodeShortened, RS_PARITY_BYTES_HEAVY } from './reed-solomon'
+import { RS_PARITY_BYTES_HEAVY } from './reed-solomon'
+import {
+  MAGIC,
+  MAGIC_BIT_TOLERANCE,
+  PREAMBLE_BITS,
+  PREAMBLE_BIT_TOLERANCE,
+  buildPacket as buildFramedPacket,
+  verifyAndExtract as verifyFramedPacket,
+  bytesToBits,
+  bitsToBytes,
+} from './codec-framing'
 
 // OFDM uses HEAVY RS parity (128 bytes) to tolerate the ~25% byte error rate
 // that broadband noise produces when it hits all 4 OFDM bands simultaneously.
@@ -52,71 +62,11 @@ const BAND_FREQS: ReadonlyArray<readonly [number, number]> = [
 // would be 4 * PER_TONE = 16000 = -6 dBFS, matching the single-FSK config.
 const PER_TONE_AMPLITUDE = 4000
 
-const MAGIC = [0x43, 0x52, 0x41, 0x43] // CRAC — same wire-level magic as single-FSK
-const MAGIC_BIT_TOLERANCE = 4
-const PREAMBLE_BIT_TOLERANCE = 6
-
-// Preamble bit sequence (48 bits) — kept identical to the single-FSK module so
-// payload tooling (detectVersion, walletDecrypt, etc.) doesn't care which
-// modulation produced the bytes.
-const PREAMBLE_BITS = [
-  ...Array.from({ length: 32 }, (_, i) => i % 2),
-  1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0,
-]
-
 export type OfdmDecodeOptions = {
   sampleRate?: number
   bitSamples?: number
   repeats?: number
   channels?: number
-}
-
-// ---------- packet building (identical to single-FSK) ----------
-
-function crc32(bytes: Uint8Array): number {
-  let crc = 0xffffffff
-  for (let byteIndex = 0; byteIndex < bytes.length; byteIndex++) {
-    crc ^= bytes[byteIndex]
-    for (let i = 0; i < 8; i++) {
-      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1))
-    }
-  }
-  return (crc ^ 0xffffffff) >>> 0
-}
-
-function bytesToBits(bytes: Uint8Array): number[] {
-  const bits: number[] = []
-  for (let byteIndex = 0; byteIndex < bytes.length; byteIndex++) {
-    const byte = bytes[byteIndex]
-    for (let bit = 7; bit >= 0; bit--) bits.push((byte >> bit) & 1)
-  }
-  return bits
-}
-
-function bitsToBytes(bits: number[]): Uint8Array {
-  const bytes = new Uint8Array(Math.floor(bits.length / 8))
-  for (let i = 0; i < bytes.length; i++) {
-    let value = 0
-    for (let bit = 0; bit < 8; bit++) value = (value << 1) | (bits[i * 8 + bit] & 1)
-    bytes[i] = value
-  }
-  return bytes
-}
-
-function buildPacket(payload: Uint8Array): Uint8Array {
-  const rsEncoded = rsEncodeShortened(payload, OFDM_RS_PARITY)
-  if (rsEncoded.length > 0xffff) throw new Error('Acoustic payload too long')
-  const packet = new Uint8Array(MAGIC.length + 2 + 4 + rsEncoded.length)
-  packet.set(MAGIC, 0)
-  packet[4] = (rsEncoded.length >> 8) & 0xff
-  packet[5] = rsEncoded.length & 0xff
-  const checksum = crc32(payload)
-  packet[6] = (checksum >>> 24) & 0xff
-  packet[7] = (checksum >>> 16) & 0xff
-  packet[8] = (checksum >>> 8) & 0xff
-  packet[9] = checksum & 0xff
-  packet.set(rsEncoded, 10)
-  return packet
 }
 
 // ---------- encoder ----------
@@ -126,7 +76,7 @@ export function ofdmEncodePayload(payload: Uint8Array, options: OfdmDecodeOption
   const bitSamples = options.bitSamples ?? OFDM_BIT_SAMPLES
   const repeats = options.repeats ?? OFDM_REPEATS
 
-  const packetBits = bytesToBits(buildPacket(payload))
+  const packetBits = bytesToBits(buildFramedPacket(payload, OFDM_RS_PARITY))
 
   // Preamble: each preamble bit is replicated across all 4 bands within one symbol.
   // This costs 4x more time on the preamble (48 symbols vs 12), but means any single
@@ -259,23 +209,6 @@ function findPreamble(bits: number[], from = 0): number {
   return -1
 }
 
-function verifyAndExtract(packet: Uint8Array): Uint8Array | null {
-  if (packet.length < 10) return null
-  const length = (packet[4] << 8) | packet[5]
-  if (length < OFDM_RS_PARITY) return null
-  if (packet.length < 10 + length) return null
-  const expected = ((packet[6] << 24) | (packet[7] << 16) | (packet[8] << 8) | packet[9]) >>> 0
-  const rsEncoded = packet.slice(10, 10 + length)
-  let payload: Uint8Array
-  try {
-    payload = rsDecodeShortened(rsEncoded, OFDM_RS_PARITY)
-  } catch {
-    return null
-  }
-  if (crc32(payload) !== expected) return null
-  return payload
-}
-
 const ERROR_TIERS: Record<string, number> = {
   'OFDM preamble not found': 0,
   'OFDM packet header incomplete': 1,
@@ -349,7 +282,7 @@ export function ofdmDecodePayload(samples: Float64Array, options: OfdmDecodeOpti
           recordError('OFDM packet incomplete')
           break
         }
-        const payload = verifyAndExtract(bitsToBytes(packetBits))
+        const payload = verifyFramedPacket(bitsToBytes(packetBits), OFDM_RS_PARITY)
         if (payload) return payload
         recordError('OFDM packet checksum mismatch')
         preambleSymbol = findPreamble(preambleStream, preambleSymbol + 1)
