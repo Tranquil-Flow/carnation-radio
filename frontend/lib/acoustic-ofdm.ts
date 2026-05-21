@@ -36,11 +36,12 @@ export const OFDM_BIT_SAMPLES = 200 // samples per symbol = ~4.5ms
 export const OFDM_REPEATS = 3
 export const OFDM_BITS_PER_SYMBOL = 4
 
-// Four BFSK pairs spread across 14.5–18 kHz. 500 Hz separation within each pair,
-// 500 Hz between adjacent pairs. Goertzel bandwidth at N=200 samples is ~220 Hz,
-// giving ~2.3x selectivity which is comfortably above the discriminator threshold.
-// Band 0 (14.5 kHz) is slightly audible to some adults; bands 1-3 are increasingly
-// inaudible. We accept the audibility floor to win the SNR + range trade-off.
+// Four BFSK pairs in 14.5-18 kHz. Above the dominant spectral content of speech
+// and most music (which drops sharply above 8 kHz), giving a relatively clear
+// band for the carrier. Tested cheaper bands (9-13 kHz) where the music itself
+// has high energy — those failed because in-band music content drowns the
+// carrier at the mic. Trade-off: this band rolls off on cheap consumer speakers,
+// limiting cross-device range, but the SNR vs music interference is better.
 const BAND_FREQS: ReadonlyArray<readonly [number, number]> = [
   [14500, 15000],
   [15500, 16000],
@@ -48,8 +49,7 @@ const BAND_FREQS: ReadonlyArray<readonly [number, number]> = [
   [17500, 18000],
 ]
 // Per-tone amplitude. Total peak amplitude at in-phase alignment of all 4 tones
-// would be 4 * PER_TONE = 16000 = -6 dBFS, matching the single-FSK config. Real
-// average is sqrt(4) * PER_TONE = 8000 due to random phase relationships.
+// would be 4 * PER_TONE = 16000 = -6 dBFS, matching the single-FSK config.
 const PER_TONE_AMPLITUDE = 4000
 
 const MAGIC = [0x43, 0x52, 0x41, 0x43] // CRAC — same wire-level magic as single-FSK
