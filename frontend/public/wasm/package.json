@@ -1,0 +1,15 @@
+{
+  "name": "carnation-stego",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "carnation_stego_bg.wasm",
+    "carnation_stego.js",
+    "carnation_stego.d.ts"
+  ],
+  "main": "carnation_stego.js",
+  "types": "carnation_stego.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
