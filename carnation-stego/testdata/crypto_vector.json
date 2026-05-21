@@ -1,0 +1,5 @@
+{
+  "passphrase": "cross-compat-test",
+  "plaintext": "Crypto cross-compat!",
+  "ciphertext_hex": "449865ea31c8177b9aae6e474a77d675b60dfa4594f3b30798b2ab1b3d9550b0b93137f5d58bfd2798790e5dc4ebf12e29a79f396c9b519554c400d901f89f57d775e3d5"
+}
