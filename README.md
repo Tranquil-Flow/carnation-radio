@@ -151,6 +151,36 @@ messages.
 - **Live broadcast at a venue?** → OFDM. Add the carrier to your music; anyone in the room with the page open can decode through their mic. Adds an audible high-frequency whine on quiet passages.
 - **Inaudible file watermark?** → Masked DSSS. Carrier lives at the music's own masking threshold so the encoding is perceptually transparent. Slower bitrate; file channel only.
 
+## Status & known limitations
+
+Different codecs are at different maturity levels — be deliberate about which one you pick.
+
+### Patchwork (production, file channel)
+✅ MP3 round-trip down to 128 kbps verified in Rust integration tests
+✅ Cross-compatible with the Python reference prototype (35 cargo tests including survival)
+⚠ Fixed embedding amplitude (`DELTA_STRENGTH=200`); on very quiet music passages the perturbation can be perceptible. Not addressed yet.
+
+### OFDM (production, air channel)
+✅ Validated over speaker → air → mic, **1–5 m line of sight in a quiet room**, including a two-device m4pro ↔ laptop test.
+⚠ Carrier sits in 14.5–18 kHz. Many adults can hear it as a faint whine on quiet passages; some can't.
+⚠ **Cliff-edge failure modes:**
+- Fails at ≥4 m with significant ambient noise (e.g. a video playing nearby)
+- Fails through a closed door / wall
+- Fails on cheap speakers that roll off above ~14 kHz (phone speakers, some Bluetooth)
+⚠ Heavy RS variant (RS(255,127)) helps in noise but doesn't close the cliff.
+
+### Masked DSSS (experimental, file channel only)
+✅ File-channel round-trip works end-to-end including the wallet flow (see integration tests).
+✅ At α=1.0 the encoding is **inaudible** — validated by speaker A/B against the original bella-ciao on built-in laptop speakers (3 rounds, listener could not distinguish).
+❌ **Does NOT survive over-air playback at α=1.0.** Tested both laptop self-coupling and proper air-gap (m4pro speakers → laptop mic, 1–4 m), at α ∈ {1, 5, 20}. Chirp-based sync detection works robustly (correlation peakRatio 8–278), but the DSSS data demodulates as random noise — ~50% bit error rate every time.
+❌ **Math says it can't work** at masking-threshold amplitudes through classical DSSS: post-correlation SNR is ~20 dB short of what BPSK needs. Closing that gap requires α ≈ 200 (clearly audible, no longer masked), spread factor ~3200 (50+ s per bit), or a learned/neural demod.
+🔜 **Path forward**: XAttnMark or IDEAW ONNX (next-phase candidate). See `MASKED_AIR_CHANNEL_BLOCKERS.md` (local doc) for the full per-bin SNR derivation and test logs.
+
+### Wallet-mode infrastructure
+✅ Mode A (ECDH via registry) end-to-end verified on Sepolia testnet
+✅ Mode B (claim-link, ephemeral key in URL fragment) end-to-end verified
+⚠ `CarnationRegistry.sol` is deployed only on **Sepolia**. Ethereum mainnet deployment is still TBD; no other chains.
+
 ## Key derivation
 
 ```
