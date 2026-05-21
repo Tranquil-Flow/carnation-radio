@@ -1,6 +1,6 @@
 # Carnation Radio
 
-Decentralized encrypted communication hidden in music. Encrypt a message to a passphrase or an Ethereum address, embed it in any audio file, and only the recipient can extract it. Three different steganography codecs cover different threat models and channels — from MP3-safe file watermarks to over-the-air live broadcasts at events.
+**v0.2** — Decentralized encrypted communication hidden in music. Encrypt a message to a passphrase or an Ethereum address, embed it in any audio file, and only the recipient can extract it. Three different steganography codecs cover different threat models and channels — from MP3-safe file watermarks to over-the-air live broadcasts at events.
 
 ## What's in the box
 
