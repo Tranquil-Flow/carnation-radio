@@ -43,6 +43,11 @@ export const MASKED_HOP = 512 // implicit from FFT/2 in stft.ts
 export const MASKED_CARRIER_BAND: readonly [number, number] = [2000, 6000]
 export const MASKED_NUM_SUBCARRIERS = 4
 export const MASKED_DEFAULT_SPREAD_FACTOR = 32
+// Validated 2026-05-21 against bella-ciao.wav on MacBook Pro speakers, 3-round
+// A/B with original at matched volume: no audible difference. The carrier sits
+// exactly at the per-frame Painter-Spanias masking threshold, which the model
+// predicts is the just-noticeable-difference boundary. Headphones might pick up
+// what speakers don't — revisit if listener reports otherwise.
 export const MASKED_DEFAULT_ALPHA = 1.0
 
 export interface MaskedEncodeOptions {
