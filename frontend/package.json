@@ -25,6 +25,7 @@
     "eciesjs": "^0.3.21",
     "encoding": "^0.1.13",
     "ethers": "^6.13.1",
+    "ggwave": "^0.4.0",
     "next": "14.2.5",
     "pino-pretty": "^11.2.1",
     "react": "^18",
