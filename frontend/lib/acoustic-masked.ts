@@ -30,6 +30,12 @@ import { stft, istft, frameView, frameMagnitudes, hzToBin, type StftFrames } fro
 import { computeMaskingThreshold } from './psychoacoustic/masking'
 import { makeCodebook } from './psychoacoustic/pn'
 import {
+  generateChirp,
+  findChirpStart,
+  DEFAULT_CHIRP,
+  type ChirpParams,
+} from './psychoacoustic/chirp'
+import {
   buildPacket,
   verifyAndExtract,
   bytesToBits,
@@ -67,6 +73,18 @@ export interface MaskedEncodeOptions {
   /** Sample value corresponding to "full-scale" (96 dB SPL in the
    *  Painter-Spanias frame). Default 32768 (int16 PCM full-scale). */
   samplePeak?: number
+  /**
+   * Embed a sync chirp at the start of the encoded output and use cross-
+   * correlation to locate it during decode. Required for the air channel
+   * (mic recording has unknown offset); harmless but adds CPU for the file
+   * channel. Default: true.
+   */
+  useSync?: boolean
+  /**
+   * Chirp amplitude as a fraction of the music's actual peak. 0.1 gives ~20
+   * dB chirp-to-music ratio at peak, mostly masked. Default 0.1.
+   */
+  chirpAmplitudeFraction?: number
 }
 
 interface ResolvedOptions {
@@ -78,6 +96,9 @@ interface ResolvedOptions {
   sampleRate: number
   samplePeak: number
   refDb: number
+  useSync: boolean
+  chirpAmplitudeFraction: number
+  chirpParams: ChirpParams
 }
 
 function resolve(options: MaskedEncodeOptions = {}): ResolvedOptions {
@@ -87,15 +108,19 @@ function resolve(options: MaskedEncodeOptions = {}): ResolvedOptions {
   // A * fftSize/2 from fft.js's realTransform.
   const fullScaleBinMag = samplePeak * (MASKED_FFT_SIZE / 2)
   const refDb = 96 - 20 * Math.log10(fullScaleBinMag)
+  const sampleRate = options.sampleRate ?? MASKED_SAMPLE_RATE
   return {
     alpha: options.alpha ?? MASKED_DEFAULT_ALPHA,
     carrierBand: options.carrierBand ?? MASKED_CARRIER_BAND,
     numSubcarriers: options.numSubcarriers ?? MASKED_NUM_SUBCARRIERS,
     spreadFactor: options.spreadFactor ?? MASKED_DEFAULT_SPREAD_FACTOR,
     parityBytes: options.parityBytes ?? RS_PARITY_BYTES,
-    sampleRate: options.sampleRate ?? MASKED_SAMPLE_RATE,
+    sampleRate,
     samplePeak,
     refDb,
+    useSync: options.useSync ?? true,
+    chirpAmplitudeFraction: options.chirpAmplitudeFraction ?? 0.1,
+    chirpParams: { ...DEFAULT_CHIRP, sampleRate },
   }
 }
 
@@ -141,7 +166,14 @@ export function maskedEncodePayload(
   const packetBits = bytesToBits(packet)
   const symbols = packetToSymbols(packetBits, opts.numSubcarriers)
   const symbolTimes = symbols.length / opts.numSubcarriers
-  const framesNeeded = symbolTimes * opts.spreadFactor
+  const dataFrames = symbolTimes * opts.spreadFactor
+
+  // Reserve hop-aligned frames at the start for the sync chirp region so DSSS
+  // modulation doesn't overlap chirp samples (avoids correlation pollution).
+  const hop = fftSize / 2
+  const chirp = opts.useSync ? generateChirp(opts.chirpParams) : new Float64Array(0)
+  const chirpFrames = opts.useSync ? Math.ceil(chirp.length / hop) : 0
+  const framesNeeded = chirpFrames + dataFrames
 
   const bins = carrierBins(opts.numSubcarriers, opts.carrierBand, opts.sampleRate)
   const codes = makeCodebook(opts.numSubcarriers, opts.spreadFactor)
@@ -155,9 +187,10 @@ export function maskedEncodePayload(
     )
   }
 
-  for (let t = 0; t < framesNeeded; t++) {
-    const view = frameView(frames, t)
-    const mags = frameMagnitudes(frames, t)
+  for (let t = 0; t < dataFrames; t++) {
+    const frameIdx = chirpFrames + t
+    const view = frameView(frames, frameIdx)
+    const mags = frameMagnitudes(frames, frameIdx)
     const T = computeMaskingThreshold(mags, { sampleRate: opts.sampleRate, refDb: opts.refDb })
 
     const symbolTime = Math.floor(t / opts.spreadFactor)
@@ -178,7 +211,23 @@ export function maskedEncodePayload(
       }
     }
   }
-  return istft(frames)
+  const reconstructed = istft(frames)
+
+  if (opts.useSync) {
+    // Add the chirp additively into the first chirp.length samples, scaled to
+    // a fraction of the music's actual peak. Music masks most of it; the
+    // remainder is brief enough not to dominate perception.
+    let musicPeak = 0
+    for (let i = 0; i < Math.min(reconstructed.length, hop * 200); i++) {
+      const a = Math.abs(reconstructed[i])
+      if (a > musicPeak) musicPeak = a
+    }
+    const chirpAmp = musicPeak * opts.chirpAmplitudeFraction
+    for (let i = 0; i < chirp.length && i < reconstructed.length; i++) {
+      reconstructed[i] += chirp[i] * chirpAmp
+    }
+  }
+  return reconstructed
 }
 
 const MAX_PACKET_BYTES = 16384 // hard cap to avoid pathological scans
@@ -197,13 +246,62 @@ export function maskedDecodePayload(
 ): Uint8Array {
   const opts = resolve(options)
   const fftSize = MASKED_FFT_SIZE
+  const hop = fftSize / 2
+
+  // With sync, try a small set of sample-level offsets around the chirp peak.
+  // Cross-correlation finds chirp position to integer-sample precision; even
+  // a 1-sample error rotates high-frequency carrier bins enough to flip BPSK
+  // sign. We try ±4 samples; one almost always decodes cleanly.
+  if (opts.useSync) {
+    const chirpTemplate = generateChirp(opts.chirpParams)
+    const result = findChirpStart(samples, chirpTemplate)
+    if (result.offset < 0) {
+      throw new Error('masked: sync chirp not found in input')
+    }
+    // Slice such that decoder STFT frame index `chirpFrames` aligns with
+    // encoder STFT frame `chirpFrames`. STFT applies a hop-long pre-pad of
+    // zeros, so decoder frame g's full window covers slice samples
+    // [(g-1)*hop, (g-1)*hop + fftSize). To match encoder frame `chirpFrames`
+    // (which covers original [(chirpFrames-1)*hop, (chirpFrames-1)*hop+fftSize)),
+    // we slice at chirp_offset + (chirpFrames-1)*hop and skip decoder frame 0.
+    const chirpFrames = Math.ceil(chirpTemplate.length / hop)
+    const baseStart = result.offset + (chirpFrames - 1) * hop
+    // Small sample-level offset search for residual sub-hop misalignment
+    // (sample-precision chirp detection + clock drift).
+    const offsetsToTry: number[] = []
+    const deltas: number[] = [0]
+    for (let d = 1; d <= 8; d++) { deltas.push(d); deltas.push(-d) }
+    for (const d of deltas) {
+      const candidate = baseStart + d
+      if (candidate >= 0 && candidate < samples.length) offsetsToTry.push(candidate)
+    }
+    let lastErr: Error | null = null
+    for (const dataStart of offsetsToTry) {
+      try {
+        return decodeAtOffset(samples.subarray(dataStart), opts, /* skipFirstFrame */ true)
+      } catch (err: any) {
+        lastErr = err
+      }
+    }
+    throw lastErr ?? new Error('masked: decode failed at all offsets')
+  }
+
+  return decodeAtOffset(samples, opts, false)
+}
+
+function decodeAtOffset(dataSamples: Float64Array, opts: ResolvedOptions, skipFirstFrame: boolean): Uint8Array {
+  const fftSize = MASKED_FFT_SIZE
   const bins = carrierBins(opts.numSubcarriers, opts.carrierBand, opts.sampleRate)
   const codes = makeCodebook(opts.numSubcarriers, opts.spreadFactor)
-  const frames = stft(samples, fftSize)
+  const frames = stft(dataSamples, fftSize)
+  // When sync slicing was used, the first decoder frame is a half-window
+  // leading edge that doesn't align with any encoder data frame. Skip it.
+  const frameStart = skipFirstFrame ? 1 : 0
 
   const bitsPerSymbolTime = opts.numSubcarriers
   const framesPerSymbolTime = opts.spreadFactor
-  const maxSymbolTimes = Math.floor(frames.numFrames / framesPerSymbolTime)
+  const usableFrames = frames.numFrames - frameStart
+  const maxSymbolTimes = Math.floor(usableFrames / framesPerSymbolTime)
 
   // First-pass: decode enough symbol-times to recover MAGIC + length (10 bytes
   // = 80 bits). Read more bytes than strictly needed so we can confirm we have
@@ -212,7 +310,7 @@ export function maskedDecodePayload(
   if (maxSymbolTimes < headerSymbolTimes) {
     throw new Error('masked: input too short to contain a packet header')
   }
-  const headerBits = decodeBits(frames, codes, bins, opts, headerSymbolTimes)
+  const headerBits = decodeBits(frames, codes, bins, opts, headerSymbolTimes, frameStart)
   const headerBytes = bitsToBytes(headerBits.slice(0, 80))
   const length = (headerBytes[4] << 8) | headerBytes[5]
   if (length === 0 || length > MAX_PACKET_BYTES) {
@@ -227,7 +325,7 @@ export function maskedDecodePayload(
       `got ${maxSymbolTimes}`,
     )
   }
-  const allBits = decodeBits(frames, codes, bins, opts, requiredSymbolTimes)
+  const allBits = decodeBits(frames, codes, bins, opts, requiredSymbolTimes, frameStart)
   const packet = bitsToBytes(allBits.slice(0, totalPacketBits))
   const payload = verifyAndExtract(packet, opts.parityBytes)
   if (!payload) throw new Error('masked: packet failed RS / CRC check')
@@ -240,13 +338,14 @@ function decodeBits(
   bins: number[],
   opts: ResolvedOptions,
   symbolTimes: number,
+  frameStart: number,
 ): number[] {
   const out: number[] = []
   for (let symbolTime = 0; symbolTime < symbolTimes; symbolTime++) {
     for (let s = 0; s < opts.numSubcarriers; s++) {
       let acc = 0
       for (let c = 0; c < opts.spreadFactor; c++) {
-        const t = symbolTime * opts.spreadFactor + c
+        const t = frameStart + symbolTime * opts.spreadFactor + c
         if (t >= frames.numFrames) break
         const view = frameView(frames, t)
         const re = view[2 * bins[s]]

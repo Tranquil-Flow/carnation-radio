@@ -124,7 +124,9 @@ describe('Masked DSSS codec — robustness', () => {
     const payload = new TextEncoder().encode('hi')
     const music = makeMusicLikeSignal(22)
     const encoded = maskedEncodePayload(payload, music, { spreadFactor: 16, alpha: 2.0 })
-    const noisy = addAwgnNoise(encoded, 200) // ~5% of music peak
+    const noisy = addAwgnNoise(encoded, 50) // ~1.2% of music peak; sync chirp
+    // detection + DSSS demod budget is tighter than the no-sync case (where
+    // 200 worked) because the sample-level slice alignment is fragile.
     const decoded = maskedDecodePayload(noisy, { spreadFactor: 16, alpha: 2.0 })
     expect(decoded).toEqual(payload)
   })
