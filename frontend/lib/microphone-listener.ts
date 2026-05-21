@@ -7,12 +7,19 @@ export type DecodeStatus =
 
 export type StegoDecodeFn = (samples: Float64Array) => Promise<Uint8Array | null>
 
+/** Synchronous codec decoder. Returns the payload on success, or throws with a
+ *  descriptive error message (the listener treats "preamble not found" as
+ *  "still looking" and any other error as a hopeful "preamble-detected"). */
+export type CodecDecodeFn = (samples: Float64Array) => Uint8Array
+
 export interface ListenerOptions {
   sampleRate?: number
   frameSamples?: number
   rollingWindowSeconds?: number
   decodeIntervalFrames?: number
   minFramesBeforeFirstDecode?: number
+  /** Injected codec decoder. Defaults to OFDM for back-compat. */
+  decoder?: CodecDecodeFn
 }
 
 const DEFAULTS = {
@@ -25,6 +32,7 @@ const DEFAULTS = {
   decodeIntervalFrames: 43,
   // Wait for ~3s of audio before the first attempt — enough samples for a short preamble lock.
   minFramesBeforeFirstDecode: 130,
+  decoder: ofdmDecodePayload as CodecDecodeFn,
 }
 
 /**
@@ -117,7 +125,7 @@ export class AcousticListener {
       const samples = this.buffer.contiguous()
       if (samples.length === 0) return { kind: 'listening' }
       try {
-        const payload = ofdmDecodePayload(samples)
+        const payload = this.options.decoder(samples)
         return { kind: 'decoded', payload }
       } catch (err: any) {
         const message = err?.message || String(err)

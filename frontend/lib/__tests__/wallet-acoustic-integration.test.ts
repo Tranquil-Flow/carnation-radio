@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { acousticEncodePayload, acousticDecodePayload, mixCarrier } from '../acoustic'
+import { maskedEncodePayload, maskedDecodePayload } from '../acoustic-masked'
 import { walletEncrypt, walletDecrypt, getPublicKeyHex } from '../wallet-crypto'
 import { detectVersion } from '../wire'
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js'
@@ -103,6 +104,44 @@ describe('Wallet mode + acoustic codec integration', () => {
     expect(version).toBe('wallet_repetition')
     const decrypted = await walletDecrypt(recipient.privHex, data)
     expect(new TextDecoder().decode(decrypted)).toBe('encrypted via wallet through music')
+  })
+
+  it('round-trips wallet-encrypted message through the masked DSSS codec', async () => {
+    const sender = deriveTestWallet('sender-masked-1')
+    const recipient = deriveTestWallet('recipient-masked-1')
+
+    const plaintext = new TextEncoder().encode('via masked')
+
+    const walletPayload = await walletEncrypt(
+      sender.privHex,
+      sender.pubHex,
+      recipient.pubHex,
+      plaintext,
+    )
+
+    const versioned = new Uint8Array(1 + walletPayload.length)
+    versioned[0] = VERSION_WALLET_REPETITION
+    versioned.set(walletPayload, 1)
+
+    // Music-like carrier — encoder needs enough samples to embed the payload.
+    // Wallet payloads (~96-128 bytes after ECIES + GCM tag) are larger than the
+    // 'test' payload, so allow generous duration.
+    const sampleRate = 44100
+    const music = new Float64Array(sampleRate * 40)
+    const freqs = [110, 220, 440, 880, 1760, 3520]
+    for (let i = 0; i < music.length; i++) {
+      let v = 0
+      for (let j = 0; j < freqs.length; j++) {
+        v += Math.sin(2 * Math.PI * freqs[j] * i / sampleRate + j * 0.7)
+      }
+      music[i] = (v / freqs.length) * 4000
+    }
+    const encoded = maskedEncodePayload(versioned, music, { spreadFactor: 8 })
+    const decoded = maskedDecodePayload(encoded, { spreadFactor: 8 })
+    const { version, data } = detectVersion(decoded)
+    expect(version).toBe('wallet_repetition')
+    const decrypted = await walletDecrypt(recipient.privHex, data)
+    expect(new TextDecoder().decode(decrypted)).toBe('via masked')
   })
 
   it('decode fails with wrong recipient privhex (cryptographic integrity)', async () => {
