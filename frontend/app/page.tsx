@@ -13,7 +13,7 @@ import AudioPlayer from './components/AudioPlayer'
 import { encryptMessage, decryptMessage } from '@/lib/crypto'
 import { formatEncodeError } from '@/lib/errors'
 import { stegoEncode, stegoDecode, createFrameDecoder } from '@/lib/stego'
-import { acousticEncodePayload, mixCarrier } from '@/lib/acoustic'
+import { ofdmEncodePayload, mixOfdmCarrier } from '@/lib/acoustic-ofdm'
 import { AcousticListener } from '@/lib/microphone-listener'
 import { toWav, toWavBlob } from '@/lib/transcode'
 import { maxMessageBytes, minDurationSeconds, getAudioDuration } from '@/lib/capacity'
@@ -251,7 +251,7 @@ export default function Home() {
 
       setEncStage('embedding')
       const encoded = encAcousticCarrier
-        ? mixCarrier(new Float64Array(samples), acousticEncodePayload(acousticPayload))
+        ? mixOfdmCarrier(new Float64Array(samples), ofdmEncodePayload(acousticPayload))
         : await stegoEncode(
           new Float64Array(samples),
           encrypted,
