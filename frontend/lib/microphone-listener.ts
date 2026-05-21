@@ -1,4 +1,4 @@
-import { acousticDecodePayload } from './acoustic'
+import { ofdmDecodePayload } from './acoustic-ofdm'
 
 export type DecodeStatus =
   | { kind: 'listening' }
@@ -117,7 +117,7 @@ export class AcousticListener {
       const samples = this.buffer.contiguous()
       if (samples.length === 0) return { kind: 'listening' }
       try {
-        const payload = acousticDecodePayload(samples)
+        const payload = ofdmDecodePayload(samples)
         return { kind: 'decoded', payload }
       } catch (err: any) {
         const message = err?.message || String(err)

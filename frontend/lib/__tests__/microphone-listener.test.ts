@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AcousticListener, MicrophoneFrameBuffer } from '../microphone-listener'
-import { acousticEncodePayload, DEFAULT_BIT_SAMPLES, DEFAULT_REPEATS } from '../acoustic'
+import { ofdmEncodePayload, OFDM_BIT_SAMPLES, OFDM_REPEATS } from '../acoustic-ofdm'
 
 const FRAME_SAMPLES = 1024
 const SAMPLE_RATE = 44100
@@ -58,9 +58,9 @@ describe('AcousticListener', () => {
     expect(triggers).toEqual([10, 15, 20, 25])
   })
 
-  it('decodes an FSK payload pushed frame-by-frame', async () => {
+  it('decodes an OFDM payload pushed frame-by-frame', async () => {
     const payload = new TextEncoder().encode('bella ciao physical')
-    const encoded = acousticEncodePayload(payload)
+    const encoded = ofdmEncodePayload(payload)
     const listener = new AcousticListener({
       // Push every frame; decode once at the end. The full multi-offset/multi-ratio search
       // is O(buffer) per attempt, so we don't run it on every frame in tests.
@@ -78,23 +78,27 @@ describe('AcousticListener', () => {
 
   it('reports preamble-detected once acoustic decoder partially locks', async () => {
     const payload = new TextEncoder().encode('partial lock test with extra bytes for damage')
-    const encoded = acousticEncodePayload(payload, { disableWarmup: true })
-    // Zero out 20 payload bytes (160 bits) — beyond RS(255,223)'s 16-byte correction capacity —
-    // so RS fails and the listener surfaces "checksum mismatch" (preamble + magic both succeeded).
+    const encoded = ofdmEncodePayload(payload)
+    // Zero out a span of data symbols past the preamble: 48 preamble symbols
+    // (replicated across bands) then ~20 data symbols of corruption. Each symbol
+    // is OFDM_REPEATS × OFDM_BIT_SAMPLES samples. Knocking out enough samples
+    // forces enough byte errors to defeat RS, exposing the checksum mismatch path.
     const corrupted = new Float64Array(encoded)
-    const bitWindow = DEFAULT_REPEATS * DEFAULT_BIT_SAMPLES
-    for (let i = 128 * bitWindow; i < (128 + 20 * 8) * bitWindow && i < corrupted.length; i++) corrupted[i] = 0
+    const symbolWindow = OFDM_REPEATS * OFDM_BIT_SAMPLES
+    const corruptStart = 48 * symbolWindow
+    const corruptEnd = (48 + 30) * symbolWindow
+    for (let i = corruptStart; i < corruptEnd && i < corrupted.length; i++) corrupted[i] = 0
 
     const listener = new AcousticListener({
       minFramesBeforeFirstDecode: 1,
       decodeIntervalFrames: 1000, // only the first auto-trigger fires within this test
-      rollingWindowSeconds: 120, // packet is ~62s after RS expansion; buffer must hold full preamble + packet
+      rollingWindowSeconds: 60,
     })
     for (const frame of framesFromSamples(corrupted)) listener.push(frame)
     const status = await listener.tryDecode()
     expect(status.kind).toBe('preamble-detected')
     if (status.kind === 'preamble-detected') {
-      expect(status.detail).toMatch(/checksum mismatch/i)
+      expect(status.detail).toMatch(/checksum mismatch|magic mismatch/i)
     }
     expect(listener.hadPreamble()).toBe(true)
   })
