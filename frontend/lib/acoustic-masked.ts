@@ -29,6 +29,7 @@
 import { stft, istft, frameView, frameMagnitudes, hzToBin, type StftFrames } from './psychoacoustic/stft'
 import { computeMaskingThreshold } from './psychoacoustic/masking'
 import { makeCodebook } from './psychoacoustic/pn'
+import { bandpass2to6kHz } from './psychoacoustic/bandpass'
 import {
   generateChirp,
   findChirpStart,
@@ -52,8 +53,14 @@ export const MASKED_DEFAULT_SPREAD_FACTOR = 32
 // Validated 2026-05-21 against bella-ciao.wav on MacBook Pro speakers, 3-round
 // A/B with original at matched volume: no audible difference. The carrier sits
 // exactly at the per-frame Painter-Spanias masking threshold, which the model
-// predicts is the just-noticeable-difference boundary. Headphones might pick up
-// what speakers don't — revisit if listener reports otherwise.
+// predicts is the just-noticeable-difference boundary.
+//
+// Phase 5 air-channel testing (built-in laptop speakers + built-in mic):
+// at alpha=1.0 / 5.0 / 20.0 the DSSS data did NOT decode (~50% BER, header
+// length always garbage). Chirp sync detected reliably (peakRatio 8-278).
+// Conclusion: the cheap-laptop speaker→mic coupling is the bottleneck, not
+// the codec. External hardware or a neural codec (XAttnMark) would be the
+// next experiment. Masked codec ships as FILE-CHANNEL-ONLY for now.
 export const MASKED_DEFAULT_ALPHA = 1.0
 
 export interface MaskedEncodeOptions {
@@ -85,6 +92,14 @@ export interface MaskedEncodeOptions {
    * dB chirp-to-music ratio at peak, mostly masked. Default 0.1.
    */
   chirpAmplitudeFraction?: number
+  /**
+   * Apply a 2-6 kHz bandpass to mic input before chirp detection / demod.
+   * Helps when out-of-band music energy is causing AGC compression or
+   * raising the noise floor. The IIR bandpass distorts phase, which our
+   * BPSK demod is sensitive to, so it's OFF by default and the file-channel
+   * path doesn't need it. Turn on for live-mic decode. Default false.
+   */
+  applyBandpass?: boolean
 }
 
 interface ResolvedOptions {
@@ -99,6 +114,7 @@ interface ResolvedOptions {
   useSync: boolean
   chirpAmplitudeFraction: number
   chirpParams: ChirpParams
+  applyBandpass: boolean
 }
 
 function resolve(options: MaskedEncodeOptions = {}): ResolvedOptions {
@@ -121,6 +137,7 @@ function resolve(options: MaskedEncodeOptions = {}): ResolvedOptions {
     useSync: options.useSync ?? true,
     chirpAmplitudeFraction: options.chirpAmplitudeFraction ?? 0.1,
     chirpParams: { ...DEFAULT_CHIRP, sampleRate },
+    applyBandpass: options.applyBandpass ?? false,
   }
 }
 
@@ -253,8 +270,21 @@ export function maskedDecodePayload(
   // a 1-sample error rotates high-frequency carrier bins enough to flip BPSK
   // sign. We try ±4 samples; one almost always decodes cleanly.
   if (opts.useSync) {
+    if (opts.applyBandpass) {
+      // Bandpass-filter the input to the 2-6 kHz carrier band. Removes out-
+      // of-band music interference (bass, treble) and improves chirp-
+      // detection peak ratio. The IIR bandpass distorts phase, which the
+      // BPSK demod is sensitive to, so this is OFF by default — only the
+      // live-mic decode path opts in.
+      samples = bandpass2to6kHz(samples, opts.sampleRate)
+    }
+
     const chirpTemplate = generateChirp(opts.chirpParams)
-    const result = findChirpStart(samples, chirpTemplate)
+    // Cap chirp-search FFT cost. A 30-second window is enough headroom even
+    // when music loops every ~2 minutes — the chirp reappears with each
+    // loop, and we run multiple decode attempts per minute.
+    const maxSearchSamples = Math.floor(30 * opts.sampleRate)
+    const result = findChirpStart(samples, chirpTemplate, 4.0, maxSearchSamples)
     if (result.offset < 0) {
       throw new Error('masked: sync chirp not found in input')
     }

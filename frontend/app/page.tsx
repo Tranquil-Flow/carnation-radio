@@ -660,12 +660,11 @@ export default function Home() {
       // plus loop slack. First decode attempt ~3s after capture begins, then ~every 2s
       // (CPU-cheaper than every 1s with the larger search space + RS overhead).
       // Inject the codec decoder so the mic path matches the user's choice.
-      // 'masked' over-air has no sync preamble yet (Phase 5 work) — it works
-      // mainly for file decoding; mic decode will likely just keep listening
-      // until timeout. OFDM and Patchwork (via frameDecoder) remain the
-      // production air-channel paths.
+      // Masked codec uses sync chirp + DSSS; mic-decode opts into the 2-6 kHz
+      // bandpass to suppress out-of-band music interference. OFDM keeps its
+      // own internal sync at 14-18 kHz.
       const acousticCodecDecoder = decCodec === 'masked'
-        ? maskedDecodePayload
+        ? (samples: Float64Array) => maskedDecodePayload(samples, { applyBandpass: true })
         : ofdmDecodePayload
       const acoustic = new AcousticListener({
         rollingWindowSeconds: 120,
