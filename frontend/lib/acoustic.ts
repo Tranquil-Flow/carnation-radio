@@ -144,12 +144,23 @@ function decodeSymbolBits(samples: Float64Array, offset: number, symbolCount: nu
   return bits
 }
 
+// Allow up to this many bit-mismatches in the 48-bit preamble before rejecting.
+// 6 of 48 = 12.5% — chance of random noise matching is ~5e-8 per bit position, so
+// false locks are extremely rare. Trade-off: extends usable range at lower SNR
+// (3m+, weaker mic signal) by letting the decoder lock on a partially-corrupted
+// preamble; CRC32 + RS on the payload are the real integrity check downstream.
+const PREAMBLE_BIT_TOLERANCE = 6
+
 function findPreamble(bits: number[], from = 0): number {
-  outer: for (let i = from; i <= bits.length - PREAMBLE_BITS.length; i++) {
+  for (let i = from; i <= bits.length - PREAMBLE_BITS.length; i++) {
+    let mismatches = 0
     for (let j = 0; j < PREAMBLE_BITS.length; j++) {
-      if (bits[i + j] !== PREAMBLE_BITS[j]) continue outer
+      if (bits[i + j] !== PREAMBLE_BITS[j]) {
+        mismatches++
+        if (mismatches > PREAMBLE_BIT_TOLERANCE) break
+      }
     }
-    return i
+    if (mismatches <= PREAMBLE_BIT_TOLERANCE) return i
   }
   return -1
 }
