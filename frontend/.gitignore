@@ -40,3 +40,4 @@ next-env.d.ts
 test-results/
 playwright-report/
 e2e/fixtures/.acoustic-generated.wav
+e2e/fixtures/.masked-generated.wav
