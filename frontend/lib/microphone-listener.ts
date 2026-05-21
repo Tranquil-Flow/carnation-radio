@@ -130,7 +130,15 @@ export class AcousticListener {
       } catch (err: any) {
         const message = err?.message || String(err)
         this.lastError = message
-        if (!message.includes('preamble not found')) {
+        // "No signal yet" patterns — these don't constitute a preamble-
+        // detected event. Different codecs phrase their "still listening"
+        // state differently: OFDM says "preamble not found", masked codec
+        // says "sync chirp not found".
+        const stillListening =
+          message.includes('preamble not found') ||
+          message.includes('sync chirp not found') ||
+          message.includes('input too short')
+        if (!stillListening) {
           this.preambleEverDetected = true
           return { kind: 'preamble-detected', detail: message }
         }
