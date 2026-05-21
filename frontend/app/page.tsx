@@ -34,6 +34,29 @@ function deriveEmbedKey(secret: string): Uint8Array {
   return sha256(new TextEncoder().encode('carnation-embed:' + secret))
 }
 
+/** Translate raw acoustic-decoder error strings into a short user-facing hint shown
+ * under the live mic status. Falls through to the raw text for unknown errors. */
+function humanizeDecodeError(raw: string | null): string {
+  if (!raw) return ''
+  if (/preamble not found/i.test(raw)) return 'Looking for a Carnation signal…'
+  if (/header incomplete|packet incomplete/i.test(raw)) return 'Catching the start of a packet…'
+  if (/magic mismatch/i.test(raw)) return 'Signal detected — trying to lock on'
+  if (/checksum mismatch/i.test(raw)) return 'Signal too noisy — try moving closer or quieter background'
+  return raw
+}
+
+/** Build the user-facing error shown when mic listening times out without a successful
+ * decode. The advice changes based on how far the decoder got before timeout. */
+function decodeFailureAdvice(lastErr: string | null, hadPreamble: boolean): string {
+  if (hadPreamble && lastErr && /checksum mismatch/i.test(lastErr)) {
+    return "Couldn't recover the message — signal arrived but was too distorted. Try moving closer to the speakers, reducing background noise, or playing at higher volume."
+  }
+  if (hadPreamble) {
+    return "Detected a Carnation signal but couldn't lock onto the full packet. Try moving closer or making sure the song plays from the beginning."
+  }
+  return "No Carnation signal detected. Make sure: 1) the encoded song is playing through speakers near this device, 2) volume is reasonably loud, 3) the room isn't too noisy."
+}
+
 export default function Home() {
   const [tab, setTab] = useState<Tab>('encode')
   const { address, isConnected } = useAccount()
@@ -691,7 +714,6 @@ export default function Home() {
 
         if (readyToDecode) {
           const status = await acoustic.tryDecode()
-          console.log(`tryDecode @${acoustic.elapsedSeconds().toFixed(1)}s → ${status.kind}${status.kind === 'preamble-detected' ? ` (${status.detail})` : ''}`)
           if (decoded) return
           if (status.kind === 'decoded') {
             decoded = true
@@ -708,12 +730,13 @@ export default function Home() {
           }
           if (status.kind === 'preamble-detected') {
             setMicStatus('preamble-detected')
-            setMicStatusDetail(status.detail)
+            setMicStatusDetail(humanizeDecodeError(status.detail))
           }
           if (acoustic.elapsedSeconds() >= maxCaptureSeconds) {
-            const last = acoustic.getLastError() || 'no acoustic signal detected'
+            const lastErr = acoustic.getLastError()
+            const advice = decodeFailureAdvice(lastErr, acoustic.hadPreamble())
             setMicStatus('failed')
-            setDecError(`Microphone listening timed out (${maxCaptureSeconds}s) — ${last}`)
+            setDecError(advice)
             setDecState('idle')
             stopMic()
           }
