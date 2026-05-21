@@ -107,16 +107,52 @@ cd forge && forge test --summary
 - RegisterAndLookup gas: 93,999 (first SSTORE + event emit)
 
 ### Frontend (`npx vitest run` — vitest 4.1.0)
-- `crypto.test.ts`, `wire.test.ts`, `e2e.test.ts`, `registry.test.ts`
-- `tx-pubkey.test.ts`, `claim-link.test.ts`, `encrypt-to-address.test.ts`, `wallet-crypto.test.ts`
-- **Total: 43 passed, 0 failed**
+- Crypto / wire / registry / wallet / claim-link suites
+- Acoustic codecs: `acoustic.test.ts` (single-FSK), `acoustic-ofdm.test.ts` (4-band OFDM)
+- Psychoacoustic codec: `psychoacoustic.test.ts` (STFT, Bark, masking), `acoustic-masked.test.ts` (DSSS)
+- Microphone listener: `microphone-listener.test.ts`
+- Wallet-acoustic integration covering all 3 codecs
+- **Total: 108 passed, 6 skipped (as of 2026-05-21)**
 
 ## Design Documents
 - `docs/superpowers/specs/2026-03-13-phase1-mvp-design.md` — Full design spec
 - `docs/superpowers/plans/2026-03-13-phase1-mvp-plan.md` — Implementation plan
 
+## Acoustic codec landscape (2026-05-21)
+
+Three codecs ship alongside each other, exposed via a 3-way selector in the
+encode/decode UI:
+
+| Codec | Module | Where it lives | Audibility | Channel |
+|---|---|---|---|---|
+| **Patchwork** | `carnation-stego` Rust/WASM | DCT bins 40-350 | Mostly inaudible (depends on music) | File (MP3 ≥128 kbps) |
+| **OFDM** | `lib/acoustic-ofdm.ts` | 14.5-18 kHz, 4-band FSK | Faint high-frequency whine | Air, 1-5m line-of-sight in quiet rooms |
+| **Masked (experimental)** | `lib/acoustic-masked.ts` | 2-6 kHz DSSS at masking threshold | Inaudible at α=1.0 (validated) | File only; does NOT survive air |
+
+Defaults: Patchwork on encode, Patchwork on decode (matches the production
+file-sharing use case). Decode-mode selector must match what the sender used.
+
+### Phase 5 air-channel characterization (masked codec)
+
+Tested both speaker→mic configurations:
+- Self-coupling (laptop speakers → laptop mic): bandpass + α∈{1,5,20} — fails
+- True air gap (m4pro speakers → this laptop mic, 1-4m): α∈{1,5,20} — fails
+
+In every config: chirp sync detection works robustly (peakRatio 8-278 vs the
+4.0 threshold), but DSSS data demod gives ~50% bit error rate. Root cause is
+the per-bin SNR math at the carrier band:
+- DSSS bin value (α=20): ~2,400 vs music bin RMS ~50,000 → −26 dB per-bin
+- After 32-chip correlation gain (+15 dB): −11 dB post-correlation SNR
+- Need ~+9 dB for ~1% BER → 20 dB gap
+
+Closing that gap requires α≈200 (audible), spread factor ~3200 (50s/bit), or
+a different demod (neural codec). The fully-inaudible + air-channel +
+practical-bitrate triangle is closed under classical DSSS.
+
+Path forward for masked-over-air: XAttnMark ONNX or IDEAW (Phase 2 targets).
+
 ## Phase 2 Targets
-- Neural watermarking (IDEAW/XAttnMark ONNX models) for better MP3 robustness
+- Neural watermarking (IDEAW/XAttnMark ONNX models) — now ALSO the path to masked-over-air
 - BCH error correction upgrade from 17x repetition coding
 - Wallet-mode decryption in decode view
 - IPFS/Arweave storage integration
