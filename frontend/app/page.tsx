@@ -13,8 +13,11 @@ import AudioPlayer from './components/AudioPlayer'
 import { encryptMessage, decryptMessage } from '@/lib/crypto'
 import { formatEncodeError } from '@/lib/errors'
 import { stegoEncode, stegoDecode, createFrameDecoder } from '@/lib/stego'
-import { ofdmEncodePayload, mixOfdmCarrier } from '@/lib/acoustic-ofdm'
+import { ofdmEncodePayload, mixOfdmCarrier, ofdmDecodePayload } from '@/lib/acoustic-ofdm'
+import { maskedEncodePayload, maskedDecodePayload } from '@/lib/acoustic-masked'
 import { AcousticListener } from '@/lib/microphone-listener'
+
+type CodecChoice = 'patchwork' | 'ofdm' | 'masked'
 import { toWav, toWavBlob } from '@/lib/transcode'
 import { maxMessageBytes, minDurationSeconds, getAudioDuration } from '@/lib/capacity'
 import {
@@ -80,7 +83,10 @@ export default function Home() {
   // Claim link state (Mode B encryption)
   const [claimLink, setClaimLink] = useState<string | null>(null)
   const [claimCopied, setClaimCopied] = useState(false)
-  const [encAcousticCarrier, setEncAcousticCarrier] = useState(false)
+  // Codec selector. Patchwork (Rust WASM, DCT) is the file-channel default; OFDM
+  // (14.5-18 kHz audible whine) targets air channel; masked (psychoacoustic DSSS
+  // at 2-6 kHz, experimental) is the inaudible spike.
+  const [encCodec, setEncCodec] = useState<CodecChoice>('patchwork')
 
   // Recipient registry status
   const [recipientStatus, setRecipientStatus] = useState<'idle' | 'checking' | 'registered' | 'unregistered'>('idle')
@@ -94,6 +100,7 @@ export default function Home() {
   const [decFile, setDecFile] = useState<File | null>(null)
   const [decPass, setDecPass] = useState('')
   const [decMode, setDecMode] = useState<'password' | 'wallet'>('password')
+  const [decCodec, setDecCodec] = useState<CodecChoice>('patchwork')
   const [decState, setDecState] = useState<'idle' | 'listening' | 'revealed'>('idle')
   const [decMessage, setDecMessage] = useState('')
   const [decError, setDecError] = useState<string | null>(null)
@@ -273,13 +280,21 @@ export default function Home() {
         })()
 
       setEncStage('embedding')
-      const encoded = encAcousticCarrier
-        ? mixOfdmCarrier(new Float64Array(samples), ofdmEncodePayload(acousticPayload))
-        : await stegoEncode(
+      let encoded: Float64Array
+      if (encCodec === 'ofdm') {
+        encoded = mixOfdmCarrier(
+          new Float64Array(samples),
+          ofdmEncodePayload(acousticPayload),
+        )
+      } else if (encCodec === 'masked') {
+        encoded = maskedEncodePayload(acousticPayload, new Float64Array(samples))
+      } else {
+        encoded = await stegoEncode(
           new Float64Array(samples),
           encrypted,
           embedKey,
         )
+      }
 
       setEncStage('compressing')
       const wavBlob = await toWavBlob(new Float64Array(encoded))
@@ -300,6 +315,15 @@ export default function Home() {
     }
   }
 
+  // Codec-aware decode helper: routes to the right codec based on the user's
+  // decode-codec choice. Acoustic codecs (OFDM, masked) already return a fully
+  // versioned payload; Patchwork goes through the Rust WASM stego engine.
+  async function decodeWithSelectedCodec(samples: Float64Array, embedKey: Uint8Array): Promise<Uint8Array> {
+    if (decCodec === 'ofdm') return ofdmDecodePayload(samples)
+    if (decCodec === 'masked') return maskedDecodePayload(samples)
+    return await stegoDecode(samples, embedKey)
+  }
+
   async function handleDecode() {
     if (!decFile) return
     if (pendingClaimKey === null && decMode === 'password' && !decPass) return
@@ -317,7 +341,7 @@ export default function Home() {
         if (!parsed) throw new Error('Invalid claim link')
         embedKey = deriveEmbedKey(parsed.forAddress.toLowerCase())
         const samples = await toWav(decFile)
-        const rawPayload = await stegoDecode(new Float64Array(samples), embedKey)
+        const rawPayload = await decodeWithSelectedCodec(new Float64Array(samples), embedKey)
         const { version, data } = detectVersion(rawPayload)
 
         if (isClaimMode(version)) {
@@ -337,13 +361,13 @@ export default function Home() {
         if (!address) throw new Error('Wallet not connected')
         embedKey = deriveEmbedKey(address.toLowerCase())
         const samples = await toWav(decFile)
-        const rawPayload = await stegoDecode(new Float64Array(samples), embedKey)
+        const rawPayload = await decodeWithSelectedCodec(new Float64Array(samples), embedKey)
         const { data } = detectVersion(rawPayload)
         plaintext = await walletDecrypt(privHex, data)
       } else {
         embedKey = deriveEmbedKey(decPass)
         const samples = await toWav(decFile)
-        const rawPayload = await stegoDecode(new Float64Array(samples), embedKey)
+        const rawPayload = await decodeWithSelectedCodec(new Float64Array(samples), embedKey)
         const { data } = detectVersion(rawPayload)
         plaintext = await decryptMessage(data, decPass)
       }
@@ -635,10 +659,19 @@ export default function Home() {
       // packets: small messages → ~62s of audio, so 120s window safely covers one full packet
       // plus loop slack. First decode attempt ~3s after capture begins, then ~every 2s
       // (CPU-cheaper than every 1s with the larger search space + RS overhead).
+      // Inject the codec decoder so the mic path matches the user's choice.
+      // 'masked' over-air has no sync preamble yet (Phase 5 work) — it works
+      // mainly for file decoding; mic decode will likely just keep listening
+      // until timeout. OFDM and Patchwork (via frameDecoder) remain the
+      // production air-channel paths.
+      const acousticCodecDecoder = decCodec === 'masked'
+        ? maskedDecodePayload
+        : ofdmDecodePayload
       const acoustic = new AcousticListener({
         rollingWindowSeconds: 120,
         minFramesBeforeFirstDecode: 130,
         decodeIntervalFrames: 86,
+        decoder: acousticCodecDecoder,
       })
       let decoded = false
 
@@ -922,19 +955,51 @@ export default function Home() {
               </div>
             )}
 
-            <label className="label cursor-pointer gap-3 justify-start rounded-lg border border-gray-700 bg-surface-card p-3">
-              <input
-                type="checkbox"
-                checked={encAcousticCarrier}
-                onChange={(e) => setEncAcousticCarrier(e.target.checked)}
-                className="checkbox checkbox-secondary"
-                data-testid="checkbox-acoustic-carrier"
-              />
-              <span>
-                <span className="block text-sm text-gray-200">Ultrasonic carrier (audible-mic decode)</span>
-                <span className="block text-xs text-gray-500">Mixes a near-inaudible FSK data signal (18.5/19.5 kHz) into your song so a real microphone can decode it through the air. Music sounds normal to most adults.</span>
-              </span>
-            </label>
+            <div className="rounded-lg border border-gray-700 bg-surface-card p-3 space-y-2">
+              <div className="text-sm text-gray-200">Codec</div>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="enc-codec"
+                  className="radio radio-sm radio-secondary mt-1"
+                  checked={encCodec === 'patchwork'}
+                  onChange={() => setEncCodec('patchwork')}
+                  data-testid="codec-patchwork"
+                />
+                <span>
+                  <span className="block text-sm text-gray-200">File only (Patchwork)</span>
+                  <span className="block text-xs text-gray-500">Default. DCT-domain watermark survives MP3 down to 128 kbps. Does not survive speaker-to-mic.</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="enc-codec"
+                  className="radio radio-sm radio-secondary mt-1"
+                  checked={encCodec === 'ofdm'}
+                  onChange={() => setEncCodec('ofdm')}
+                  data-testid="codec-ofdm"
+                />
+                <span>
+                  <span className="block text-sm text-gray-200">Air channel (OFDM, 14.5-18 kHz)</span>
+                  <span className="block text-xs text-gray-500">For live broadcast at events. Adds a faint high-frequency whine some listeners can hear.</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="enc-codec"
+                  className="radio radio-sm radio-secondary mt-1"
+                  checked={encCodec === 'masked'}
+                  onChange={() => setEncCodec('masked')}
+                  data-testid="codec-masked"
+                />
+                <span>
+                  <span className="block text-sm text-gray-200">Inaudible masking (experimental)</span>
+                  <span className="block text-xs text-gray-500">Hides data inside music&apos;s own masking threshold (2-6 kHz). File channel works; air channel is in development.</span>
+                </span>
+              </label>
+            </div>
 
             <button
               onClick={handleEncode}
@@ -1030,6 +1095,31 @@ export default function Home() {
               >
                 Listen from Microphone
               </button>
+            </div>
+
+            {/* Codec selector (must match what the sender used) */}
+            <div className="rounded-lg border border-gray-700 bg-surface-card p-3 space-y-2">
+              <div className="text-sm text-gray-200">Codec (must match sender)</div>
+              <div className="flex gap-2 flex-wrap">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="dec-codec" className="radio radio-xs radio-secondary"
+                    checked={decCodec === 'patchwork'} onChange={() => setDecCodec('patchwork')}
+                    data-testid="dec-codec-patchwork" />
+                  <span className="text-xs text-gray-300">Patchwork</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="dec-codec" className="radio radio-xs radio-secondary"
+                    checked={decCodec === 'ofdm'} onChange={() => setDecCodec('ofdm')}
+                    data-testid="dec-codec-ofdm" />
+                  <span className="text-xs text-gray-300">OFDM</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="dec-codec" className="radio radio-xs radio-secondary"
+                    checked={decCodec === 'masked'} onChange={() => setDecCodec('masked')}
+                    data-testid="dec-codec-masked" />
+                  <span className="text-xs text-gray-300">Masked (experimental)</span>
+                </label>
+              </div>
             </div>
 
             {/* Shared: encryption mode + passphrase/wallet */}
