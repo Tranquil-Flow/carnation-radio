@@ -86,16 +86,31 @@ export interface ChirpDetectionResult {
  * absolute correlation, the result is treated as "no chirp detected" and
  * offset = -1. Calibrate this with real data — too low → false positives;
  * too high → missed detections in noisy conditions.
+ *
+ * `maxSearchSamples` (default unlimited): when the input is very long (e.g.
+ * a 120s mic rolling buffer), correlating the whole thing requires a
+ * multi-megasample FFT that can lock up the browser. If set, only the
+ * OLDEST `maxSearchSamples` samples are searched (i.e. samples[0..N]),
+ * which is what the mic-buffer use case wants: chirps found in the oldest
+ * portion of the buffer have enough trailing audio after them to contain
+ * the full data payload, while chirps in the most-recent portion may not.
  */
 export function findChirpStart(
   samples: Float64Array,
   chirpTemplate: Float64Array,
   minPeakRatio = 4.0,
+  maxSearchSamples?: number,
 ): ChirpDetectionResult {
   const chirpLength = chirpTemplate.length
   if (samples.length < chirpLength) {
     return { offset: -1, peakRatio: 0, chirpLength }
   }
+  let inputSamples = samples
+  if (maxSearchSamples && samples.length > maxSearchSamples) {
+    inputSamples = samples.subarray(0, maxSearchSamples)
+  }
+  samples = inputSamples
+  const inputStart = 0
 
   // Pad both to a common power-of-2 length ≥ samples.length + chirpLength.
   const N = nextPow2(samples.length + chirpLength)
@@ -142,7 +157,7 @@ export function findChirpStart(
   const meanAbs = absCount > 0 ? absSum / absCount : 1e-30
   const peakRatio = peak / Math.max(meanAbs, 1e-30)
   return {
-    offset: peakRatio >= minPeakRatio ? argmax : -1,
+    offset: peakRatio >= minPeakRatio ? argmax + inputStart : -1,
     peakRatio,
     chirpLength,
   }

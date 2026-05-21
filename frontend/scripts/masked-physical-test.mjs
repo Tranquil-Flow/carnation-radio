@@ -122,8 +122,11 @@ async function main() {
         const status = await page.locator('[data-testid^="mic-"]').allInnerTexts()
         log(`Mic status: ${JSON.stringify(status)}`)
       } catch {}
-      // Last few console logs
-      log(`--- last 20 console lines ---`)
+      // Pull out masked-decoder lines, which are the most diagnostic
+      const decodeLines = consoleLogs.filter((l) => l.includes('masked-decode'))
+      log(`--- masked-decode log lines (${decodeLines.length}) ---`)
+      decodeLines.slice(-30).forEach((l) => console.log(`  ${l}`))
+      log(`--- last 20 other console lines ---`)
       consoleLogs.slice(-20).forEach((l) => console.log(`  ${l}`))
       process.exitCode = 1
     }
